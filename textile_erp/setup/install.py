@@ -62,6 +62,7 @@ def after_migrate():
 def run_setup():
 	setup_custom_fields()
 	create_fiscal_years()
+	set_default_company()
 	create_uoms()
 	create_item_attributes()
 	create_supplier_groups()
@@ -189,3 +190,17 @@ def create_fiscal_years(start_year=2023):
 		frappe.get_doc({"doctype": "Fiscal Year", "year": name, "year_start_date": start, "year_end_date": end}).insert(
 			ignore_permissions=True
 		)
+
+
+def set_default_company():
+	"""Single-company sites: make sure Global Defaults and the Administrator default point to it."""
+	companies = frappe.get_all("Company", pluck="name")
+	if len(companies) != 1:
+		return
+	company = companies[0]
+	gd = frappe.get_single("Global Defaults")
+	if gd.default_company != company:
+		gd.default_company = company
+		gd.save(ignore_permissions=True)
+	frappe.defaults.set_global_default("company", company)
+	frappe.defaults.set_user_default("company", company, "Administrator")
