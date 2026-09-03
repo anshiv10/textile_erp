@@ -33,6 +33,7 @@ def setup_items():
 	create_item_groups()
 	create_hsn_codes()
 	create_templates()
+	create_opening_balance_item()
 	fix_template_attribute_ranges()
 	ensure_fabric_uoms()
 	set_stock_settings()
@@ -157,3 +158,18 @@ def set_stock_settings():
 		changed = True
 	if changed:
 		ss.save(ignore_permissions=True)
+
+
+def create_opening_balance_item():
+	"""Service item used by the opening-invoice import (07a / 07b)."""
+	if frappe.db.exists("Item", "OPENING-BALANCE"):
+		return
+	if not frappe.db.exists("Item Group", "Services"):
+		frappe.get_doc({"doctype": "Item Group", "item_group_name": "Services",
+			"parent_item_group": "All Item Groups", "is_group": 0}).insert(ignore_permissions=True)
+	doc = frappe.new_doc("Item")
+	doc.update({"item_code": "OPENING-BALANCE", "item_name": "Opening Balance (legacy invoice)",
+		"item_group": "Services", "stock_uom": "Nos", "is_stock_item": 0, "include_item_in_manufacturing": 0})
+	if doc.meta.has_field("gst_hsn_code"):
+		doc.gst_hsn_code = "600690"
+	doc.insert(ignore_permissions=True)

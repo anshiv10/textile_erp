@@ -55,5 +55,7 @@ def set_default_place_of_supply(doc, method=None):
 
 
 def before_validate(doc, method=None):
+	if doc.get("is_opening") == "Yes":
+		return
 	set_default_place_of_supply(doc, method)
 	set_default_gst_template(doc, method)
