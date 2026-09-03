@@ -10,10 +10,12 @@ required_apps = ["frappe/erpnext"]
 after_install = [
 	"textile_erp.setup.install.after_install",
 	"textile_erp.setup.items.setup_items",
+	"textile_erp.setup.charges.setup_charge_templates",
 ]
 after_migrate = [
 	"textile_erp.setup.install.after_migrate",
 	"textile_erp.setup.items.setup_items",
+	"textile_erp.setup.charges.setup_charge_templates",
 ]
 
 doctype_js = {
