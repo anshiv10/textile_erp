@@ -7,12 +7,23 @@ app_license = "mit"
 
 required_apps = ["frappe/erpnext"]
 
-after_install = "textile_erp.setup.install.after_install"
-after_migrate = "textile_erp.setup.install.after_migrate"
+after_install = [
+	"textile_erp.setup.install.after_install",
+	"textile_erp.setup.items.setup_items",
+]
+after_migrate = [
+	"textile_erp.setup.install.after_migrate",
+	"textile_erp.setup.items.setup_items",
+]
 
 doctype_js = {
-	"Sales Invoice": "public/js/sales_invoice.js",
-	"Purchase Invoice": "public/js/purchase_invoice.js",
+	"Sales Invoice": ["public/js/sales_invoice.js", "public/js/roll_qty.js"],
+	"Purchase Invoice": ["public/js/purchase_invoice.js", "public/js/roll_qty.js"],
+	"Sales Order": "public/js/roll_qty.js",
+	"Delivery Note": "public/js/roll_qty.js",
+	"Purchase Order": "public/js/roll_qty.js",
+	"Purchase Receipt": "public/js/roll_qty.js",
+	"Stock Entry": "public/js/roll_qty.js",
 	"Subcontracting Receipt": "public/js/subcontracting_receipt.js",
 }
 
