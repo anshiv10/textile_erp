@@ -27,17 +27,25 @@ doctype_js = {
 	"Subcontracting Receipt": "public/js/subcontracting_receipt.js",
 }
 
+GST = "textile_erp.gst.set_default_gst_template"
+
 doc_events = {
 	"Sales Invoice": {
+		"before_validate": GST,
 		"validate": "textile_erp.brokerage.journal.validate_brokerage",
 		"on_submit": "textile_erp.brokerage.journal.make_brokerage_journal_entry",
 		"on_cancel": "textile_erp.brokerage.journal.cancel_brokerage_journal_entry",
 	},
 	"Purchase Invoice": {
+		"before_validate": GST,
 		"validate": "textile_erp.brokerage.journal.validate_brokerage",
 		"on_submit": "textile_erp.brokerage.journal.make_brokerage_journal_entry",
 		"on_cancel": "textile_erp.brokerage.journal.cancel_brokerage_journal_entry",
 	},
+	"Sales Order": {"before_validate": GST},
+	"Delivery Note": {"before_validate": GST},
+	"Purchase Order": {"before_validate": GST},
+	"Purchase Receipt": {"before_validate": GST},
 	"Subcontracting Receipt": {
 		"validate": "textile_erp.subcontracting.receipt.calculate_wastage",
 	},
