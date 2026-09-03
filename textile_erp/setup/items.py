@@ -145,6 +145,10 @@ def ensure_fabric_uoms():
 def set_stock_settings():
 	ss = frappe.get_single("Stock Settings")
 	changed = False
+	for df in ss.meta.fields:
+		if df.fieldtype == "Check" and "serial and batch" in (df.label or "").lower() and not ss.get(df.fieldname):
+			ss.set(df.fieldname, 1)
+			changed = True
 	if ss.meta.has_field("use_serial_batch_fields") and not ss.use_serial_batch_fields:
 		ss.use_serial_batch_fields = 1
 		changed = True

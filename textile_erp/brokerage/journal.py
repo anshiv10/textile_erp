@@ -48,8 +48,6 @@ def make_brokerage_journal_entry(doc, method=None):
 		"account": expense_account,
 		"debit_in_account_currency": flt(doc.brokerage_amount),
 		"cost_center": cost_center,
-		"reference_type": doc.doctype,
-		"reference_name": doc.name,
 	})
 	je.append("accounts", {
 		"account": payable_account,
