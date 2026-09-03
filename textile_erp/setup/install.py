@@ -61,6 +61,7 @@ def after_migrate():
 
 def run_setup():
 	setup_custom_fields()
+	create_fiscal_years()
 	create_uoms()
 	create_item_attributes()
 	create_supplier_groups()
@@ -173,3 +174,18 @@ def create_tds_categories(company):
 		})
 		doc.append("accounts", {"company": company, "account": account})
 		doc.insert(ignore_permissions=True)
+
+
+def create_fiscal_years(start_year=2023):
+	"""Indian fiscal years (Apr-Mar) from start_year up to the current year, if missing."""
+	from frappe.utils import getdate, nowdate
+	today = getdate(nowdate())
+	last = today.year if today.month >= 4 else today.year - 1
+	for y in range(start_year, last + 1):
+		name = f"{y}-{str(y + 1)[-2:]}"
+		start, end = f"{y}-04-01", f"{y + 1}-03-31"
+		if frappe.db.exists("Fiscal Year", name) or frappe.db.exists("Fiscal Year", {"year_start_date": start}):
+			continue
+		frappe.get_doc({"doctype": "Fiscal Year", "year": name, "year_start_date": start, "year_end_date": end}).insert(
+			ignore_permissions=True
+		)
