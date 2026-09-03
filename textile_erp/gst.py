@@ -56,6 +56,8 @@ def set_default_place_of_supply(doc, method=None):
 
 def before_validate(doc, method=None):
 	if doc.get("is_opening") == "Yes":
+		from textile_erp.opening import set_opening_accounts
+		set_opening_accounts(doc)
 		return
 	set_default_place_of_supply(doc, method)
 	set_default_gst_template(doc, method)

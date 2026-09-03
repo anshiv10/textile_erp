@@ -49,6 +49,7 @@ doc_events = {
 	"Subcontracting Receipt": {
 		"validate": "textile_erp.subcontracting.receipt.calculate_wastage",
 	},
+	"Stock Entry": {"before_validate": "textile_erp.opening.set_opening_accounts"},
 	"Bank Transaction": {
 		"on_submit": "textile_erp.bank.auto_reconcile.on_bank_transaction_submit",
 	},
