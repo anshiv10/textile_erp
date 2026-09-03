@@ -41,4 +41,11 @@ doc_events = {
 	"Subcontracting Receipt": {
 		"validate": "textile_erp.subcontracting.receipt.calculate_wastage",
 	},
+	"Bank Transaction": {
+		"on_submit": "textile_erp.bank.auto_reconcile.on_bank_transaction_submit",
+	},
+}
+
+scheduler_events = {
+	"hourly": ["textile_erp.bank.auto_reconcile.hourly_sweep"],
 }
