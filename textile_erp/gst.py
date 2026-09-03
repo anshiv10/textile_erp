@@ -29,3 +29,31 @@ def set_default_gst_template(doc, method=None):
 	doc.taxes_and_charges = template
 	for row in get_taxes_and_charges(master, template) or []:
 		doc.append("taxes", row)
+
+
+def set_default_place_of_supply(doc, method=None):
+	"""Unregistered party with no address: place of supply = company's GST state (typical cash / local sale)."""
+	if not doc.meta.has_field("place_of_supply") or doc.get("place_of_supply"):
+		return
+	if doc.get("customer_address") or doc.get("supplier_address") or doc.get("shipping_address_name"):
+		return
+	if not frappe.get_meta("Company").has_field("gstin"):
+		return
+	company_gstin = frappe.db.get_value("Company", doc.company, "gstin")
+	if not company_gstin:
+		return
+	state_code = company_gstin[:2]
+	state = frappe.db.get_value("Address", {"gst_state_number": state_code}, "gst_state") if frappe.get_meta("Address").has_field("gst_state_number") else None
+	if not state:
+		try:
+			from india_compliance.gst_india.constants import STATE_NUMBERS
+			state = next((s for s, n in STATE_NUMBERS.items() if n == state_code), None)
+		except Exception:
+			state = None
+	if state:
+		doc.place_of_supply = f"{state_code}-{state}"
+
+
+def before_validate(doc, method=None):
+	set_default_place_of_supply(doc, method)
+	set_default_gst_template(doc, method)

@@ -27,7 +27,7 @@ doctype_js = {
 	"Subcontracting Receipt": "public/js/subcontracting_receipt.js",
 }
 
-GST = "textile_erp.gst.set_default_gst_template"
+GST = "textile_erp.gst.before_validate"
 
 doc_events = {
 	"Sales Invoice": {
