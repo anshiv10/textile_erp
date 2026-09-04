@@ -63,3 +63,29 @@ def before_validate(doc, method=None):
 		return
 	set_default_place_of_supply(doc, method)
 	set_default_gst_template(doc, method)
+	set_item_tax_templates(doc, method)
+
+
+def set_item_tax_templates(doc, method=None):
+	"""Fallback: item rows without an Item Tax Template get the HSN's template, else 'GST 5%' of the company."""
+	if not doc.get("items") or not frappe.get_meta(doc.items[0].doctype).has_field("item_tax_template"):
+		return
+	if not frappe.db.exists("DocType", "Item Tax Template"):
+		return
+	default = frappe.db.get_value("Item Tax Template", {"company": doc.company, "title": "GST 5%"})
+	cache = {}
+	for row in doc.items:
+		if row.item_tax_template or not row.item_code:
+			continue
+		hsn = frappe.db.get_value("Item", row.item_code, "gst_hsn_code")
+		if hsn not in cache:
+			tmpl = None
+			if hsn and frappe.db.exists("DocType", "GST HSN Code"):
+				for t in frappe.get_all("HSN Tax Template" if frappe.db.exists("DocType", "HSN Tax Template") else "Item Tax",
+						filters={"parent": hsn, "parenttype": "GST HSN Code"}, fields=["item_tax_template"], limit=5):
+					if frappe.db.get_value("Item Tax Template", t.item_tax_template, "company") == doc.company:
+						tmpl = t.item_tax_template
+						break
+			cache[hsn] = tmpl or default
+		if cache[hsn]:
+			row.item_tax_template = cache[hsn]
