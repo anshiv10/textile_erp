@@ -6,7 +6,12 @@ SALES_DOCTYPES = ("Quotation", "Sales Order", "Delivery Note", "Sales Invoice")
 
 def set_default_gst_template(doc, method=None):
 	"""If no taxes are set, pick In-state / Out-state GST template by comparing GSTIN state codes."""
-	if doc.get("taxes") or doc.get("taxes_and_charges") or not doc.meta.has_field("taxes_and_charges"):
+	if doc.get("taxes") or not doc.meta.has_field("taxes_and_charges"):
+		return
+	if doc.get("taxes_and_charges"):
+		master = doc.meta.get_field("taxes_and_charges").options
+		for row in get_taxes_and_charges(master, doc.taxes_and_charges) or []:
+			doc.append("taxes", row)
 		return
 	if not frappe.get_meta("Company").has_field("gstin"):
 		return
