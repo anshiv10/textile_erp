@@ -6,19 +6,14 @@ def temporary_opening_account(company):
 
 
 def set_opening_accounts(doc, method=None):
-	"""Opening documents (Is Opening = Yes) post against Temporary Opening automatically."""
+	"""Opening documents (Is Opening = Yes) always post against Temporary Opening."""
 	if doc.get("is_opening") != "Yes":
 		return
 	account = temporary_opening_account(doc.company)
 	if not account:
 		return
-	if doc.doctype == "Stock Entry":
-		for row in doc.get("items") or []:
-			if not row.expense_account:
-				row.expense_account = account
-	elif doc.doctype == "Sales Invoice":
-		for row in doc.get("items") or []:
-			row.income_account = account
-	elif doc.doctype == "Purchase Invoice":
-		for row in doc.get("items") or []:
-			row.expense_account = account
+	field = {"Stock Entry": "expense_account", "Sales Invoice": "income_account", "Purchase Invoice": "expense_account"}.get(doc.doctype)
+	if not field:
+		return
+	for row in doc.get("items") or []:
+		row.set(field, account)
