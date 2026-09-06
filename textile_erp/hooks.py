@@ -11,49 +11,57 @@ after_install = [
 	"textile_erp.setup.install.after_install",
 	"textile_erp.setup.items.setup_items",
 	"textile_erp.setup.charges.setup_charge_templates",
+	"textile_erp.setup.routing_fields.setup_routing",
+	"textile_erp.jobwork.warehouses.create_missing_job_worker_warehouses",
 ]
 after_migrate = [
 	"textile_erp.setup.install.after_migrate",
 	"textile_erp.setup.items.setup_items",
 	"textile_erp.setup.charges.setup_charge_templates",
+	"textile_erp.setup.routing_fields.setup_routing",
+	"textile_erp.jobwork.warehouses.create_missing_job_worker_warehouses",
 ]
 
+ROLLS = "public/js/roll_qty.js"
+ROUTE = "public/js/job_worker_routing.js"
+
 doctype_js = {
-	"Sales Invoice": ["public/js/sales_invoice.js", "public/js/roll_qty.js"],
-	"Purchase Invoice": ["public/js/purchase_invoice.js", "public/js/roll_qty.js"],
-	"Sales Order": "public/js/roll_qty.js",
-	"Delivery Note": "public/js/roll_qty.js",
-	"Purchase Order": "public/js/roll_qty.js",
-	"Purchase Receipt": "public/js/roll_qty.js",
-	"Stock Entry": "public/js/roll_qty.js",
+	"Sales Invoice": ["public/js/sales_invoice.js", ROLLS, ROUTE],
+	"Purchase Invoice": ["public/js/purchase_invoice.js", ROLLS, ROUTE],
+	"Sales Order": ROLLS,
+	"Delivery Note": [ROLLS, ROUTE],
+	"Purchase Order": [ROLLS, ROUTE],
+	"Purchase Receipt": [ROLLS, ROUTE],
+	"Stock Entry": ROLLS,
 	"Subcontracting Receipt": "public/js/subcontracting_receipt.js",
 }
 
 GST = "textile_erp.gst.before_validate"
+ROUTING = "textile_erp.jobwork.routing.apply_job_worker_routing"
 
 doc_events = {
 	"Sales Invoice": {
-		"before_validate": GST,
+		"before_validate": [ROUTING, GST],
 		"validate": "textile_erp.brokerage.journal.validate_brokerage",
 		"on_submit": "textile_erp.brokerage.journal.make_brokerage_journal_entry",
 		"on_cancel": "textile_erp.brokerage.journal.cancel_brokerage_journal_entry",
 	},
 	"Purchase Invoice": {
-		"before_validate": GST,
+		"before_validate": [ROUTING, GST],
 		"validate": "textile_erp.brokerage.journal.validate_brokerage",
 		"on_submit": "textile_erp.brokerage.journal.make_brokerage_journal_entry",
 		"on_cancel": "textile_erp.brokerage.journal.cancel_brokerage_journal_entry",
 	},
 	"Sales Order": {"before_validate": GST},
-	"Delivery Note": {"before_validate": GST},
-	"Purchase Order": {"before_validate": GST},
-	"Purchase Receipt": {"before_validate": GST},
-	"Subcontracting Receipt": {
-		"validate": "textile_erp.subcontracting.receipt.calculate_wastage",
-	},
+	"Delivery Note": {"before_validate": [ROUTING, GST]},
+	"Purchase Order": {"before_validate": [ROUTING, GST]},
+	"Purchase Receipt": {"before_validate": [ROUTING, GST]},
 	"Stock Entry": {"before_validate": ["textile_erp.importing.apply_import_defaults", "textile_erp.opening.set_opening_accounts"]},
-	"Bank Transaction": {
-		"on_submit": "textile_erp.bank.auto_reconcile.on_bank_transaction_submit",
+	"Subcontracting Receipt": {"validate": "textile_erp.subcontracting.receipt.calculate_wastage"},
+	"Bank Transaction": {"on_submit": "textile_erp.bank.auto_reconcile.on_bank_transaction_submit"},
+	"Supplier": {
+		"after_insert": "textile_erp.jobwork.warehouses.on_supplier_update",
+		"on_update": "textile_erp.jobwork.warehouses.on_supplier_update",
 	},
 }
 
