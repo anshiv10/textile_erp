@@ -108,6 +108,14 @@ class JobWorkReceipt(Document):
 			se.append("additional_costs", {"expense_account": account, "description": _("Job work charges {0}").format(self.job_worker), "amount": flt(self.charges_amount)})
 		se.flags.ignore_permissions = True
 		se.insert()
+		# Newer ERPNext 16.x creates the Serial & Batch Bundle already on insert and then refuses to submit
+		# while the batch_no / serial_no fields are still filled. Reload and clear them where a bundle exists.
+		se = _shield_from_india_compliance(frappe.get_doc("Stock Entry", se.name))
+		for row in se.items:
+			if row.get("serial_and_batch_bundle"):
+				row.batch_no = None
+				row.serial_no = None
+		se.flags.ignore_permissions = True
 		se.submit()
 		return se
 
