@@ -6,6 +6,9 @@ frappe.ui.form.on("Job Work Receipt", {
 		frm.set_query("item_code", "finished_items", () => ({ filters: { has_variants: 0, is_stock_item: 1, disabled: 0, item_group: ["in", ["Grey Fabric", "Dyed Fabric"]] } }));
 		frm.set_query("target_warehouse", () => ({ filters: { company: frm.doc.company, is_group: 0 } }));
 	},
+	onload(frm) {
+		if (frm.is_new() && !frm.doc.company) frm.set_value("company", frappe.defaults.get_user_default("Company"));
+	},
 	refresh(frm) {
 		if (frm.doc.docstatus === 1) {
 			if (frm.doc.stock_entry) frm.add_custom_button(__("Stock Entry"), () => frappe.set_route("Form", "Stock Entry", frm.doc.stock_entry), __("View"));

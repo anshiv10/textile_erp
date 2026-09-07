@@ -16,7 +16,7 @@
   {"fieldname": "job_work_type", "fieldtype": "Select", "label": "Job Work Type", "options": "Knitting\nDyeing\nPrinting\nFinishing\nOther", "reqd": 1, "in_list_view": 1, "in_standard_filter": 1},
   {"fieldname": "column_break_1", "fieldtype": "Column Break"},
   {"fieldname": "posting_date", "fieldtype": "Date", "label": "Date", "default": "Today", "reqd": 1, "in_list_view": 1},
-  {"fieldname": "company", "fieldtype": "Link", "label": "Company", "options": "Company", "default": ":Company", "reqd": 1},
+  {"fieldname": "company", "fieldtype": "Link", "label": "Company", "options": "Company", "reqd": 1},
   {"fieldname": "source_warehouse", "fieldtype": "Link", "label": "Job Worker's Warehouse", "options": "Warehouse", "fetch_from": "job_worker.job_work_warehouse", "read_only": 1},
   {"fieldname": "bill_section", "fieldtype": "Section Break", "label": "Job Worker's Bill"},
   {"fieldname": "supplier_bill_no", "fieldtype": "Data", "label": "Bill No"},

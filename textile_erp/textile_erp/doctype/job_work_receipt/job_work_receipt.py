@@ -6,6 +6,8 @@ from frappe.utils import flt
 
 class JobWorkReceipt(Document):
 	def validate(self):
+		if not self.company:
+			self.company = frappe.db.get_single_value("Global Defaults", "default_company")
 		self.set_warehouses()
 		self.set_totals()
 		self.set_charges()
