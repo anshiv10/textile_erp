@@ -39,6 +39,7 @@ doctype_js = {
 	"Purchase Receipt": [ROLLS, ROUTE],
 	"Stock Entry": ROLLS,
 	"Subcontracting Receipt": "public/js/subcontracting_receipt.js",
+	"Company": "public/js/company_guard.js",
 }
 
 GST = "textile_erp.gst.before_validate"
