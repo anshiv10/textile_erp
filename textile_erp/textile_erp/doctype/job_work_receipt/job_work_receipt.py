@@ -4,6 +4,13 @@ from frappe.model.document import Document
 from frappe.utils import flt
 
 
+def _shield_from_india_compliance(doc):
+	for field in ("taxes", "taxes_and_charges"):
+		if not doc.meta.has_field(field) and not hasattr(doc, field):
+			setattr(doc, field, [] if field == "taxes" else None)
+	return doc
+
+
 class JobWorkReceipt(Document):
 	def validate(self):
 		if not self.company:
@@ -81,12 +88,14 @@ class JobWorkReceipt(Document):
 		for doctype, name in (("Purchase Invoice", self.purchase_invoice), ("Stock Entry", self.stock_entry)):
 			if name and frappe.db.get_value(doctype, name, "docstatus") == 1:
 				doc = frappe.get_doc(doctype, name)
+				if doctype == "Stock Entry":
+					_shield_from_india_compliance(doc)
 				doc.flags.ignore_permissions = True
 				doc.cancel()
 
 	def make_stock_entry(self):
 		account = frappe.db.get_value("Account", {"account_name": "Job Work Charges", "company": self.company, "is_group": 0})
-		se = frappe.new_doc("Stock Entry")
+		se = _shield_from_india_compliance(frappe.new_doc("Stock Entry"))
 		se.update({"stock_entry_type": "Repack", "purpose": "Repack", "company": self.company,
 			"posting_date": self.posting_date, "set_posting_time": 1, "job_work_receipt": self.name,
 			"remarks": _("Job work ({0}) received from {1}").format(self.job_work_type, self.job_worker_name or self.job_worker)})

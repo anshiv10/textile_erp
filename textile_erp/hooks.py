@@ -61,7 +61,7 @@ doc_events = {
 	"Delivery Note": {"before_validate": [ROUTING, GST]},
 	"Purchase Order": {"before_validate": [ROUTING, GST]},
 	"Purchase Receipt": {"before_validate": [ROUTING, GST]},
-	"Stock Entry": {"before_validate": ["textile_erp.importing.apply_import_defaults", "textile_erp.opening.set_opening_accounts"]},
+	"Stock Entry": {"before_validate": ["textile_erp.compat.shield_stock_entry", "textile_erp.importing.apply_import_defaults", "textile_erp.opening.set_opening_accounts"]},
 	"Subcontracting Receipt": {"validate": "textile_erp.subcontracting.receipt.calculate_wastage"},
 	"Bank Transaction": {"on_submit": "textile_erp.bank.auto_reconcile.on_bank_transaction_submit"},
 	"Supplier": {
