@@ -13,6 +13,7 @@ after_install = [
 	"textile_erp.setup.charges.setup_charge_templates",
 	"textile_erp.setup.routing_fields.setup_routing",
 	"textile_erp.jobwork.warehouses.create_missing_job_worker_warehouses",
+	"textile_erp.setup.charges.normalize_gst_template_rates",
 ]
 after_migrate = [
 	"textile_erp.setup.install.after_migrate",
@@ -20,16 +21,18 @@ after_migrate = [
 	"textile_erp.setup.charges.setup_charge_templates",
 	"textile_erp.setup.routing_fields.setup_routing",
 	"textile_erp.jobwork.warehouses.create_missing_job_worker_warehouses",
+	"textile_erp.setup.charges.normalize_gst_template_rates",
 ]
 
 ROLLS = "public/js/roll_qty.js"
 ROUTE = "public/js/job_worker_routing.js"
+STOCK = "public/js/stock_aware_selection.js"
 
 doctype_js = {
-	"Sales Invoice": ["public/js/sales_invoice.js", ROLLS, ROUTE],
+	"Sales Invoice": ["public/js/sales_invoice.js", ROLLS, ROUTE, STOCK],
 	"Purchase Invoice": ["public/js/purchase_invoice.js", ROLLS, ROUTE],
 	"Sales Order": ROLLS,
-	"Delivery Note": [ROLLS, ROUTE],
+	"Delivery Note": [ROLLS, ROUTE, STOCK],
 	"Purchase Order": [ROLLS, ROUTE],
 	"Purchase Receipt": [ROLLS, ROUTE],
 	"Stock Entry": ROLLS,

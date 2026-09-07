@@ -47,3 +47,20 @@ def setup_charge_templates():
 				})
 			doc.flags.ignore_permissions = True
 			doc.insert()
+
+
+GST_RATE = 5.0
+
+
+def normalize_gst_template_rates():
+	"""Template rows' Rate column = real rate (2.5/2.5 in-state, 5 out-state); only touches India Compliance defaults 9/18."""
+	for master, child in (("Sales Taxes and Charges Template", "Sales Taxes and Charges"),
+	                      ("Purchase Taxes and Charges Template", "Purchase Taxes and Charges")):
+		for row in frappe.get_all(child, filters={"parenttype": master, "rate": ["in", [9, 18]]},
+				fields=["name", "account_head", "rate"]):
+			head = (row.account_head or "").upper()
+			if "IGST" in head and row.rate == 18:
+				frappe.db.set_value(child, row.name, "rate", GST_RATE, update_modified=False)
+			elif ("CGST" in head or "SGST" in head) and row.rate == 9:
+				frappe.db.set_value(child, row.name, "rate", GST_RATE / 2, update_modified=False)
+	frappe.db.commit()
