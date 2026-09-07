@@ -12,6 +12,7 @@ after_install = [
 	"textile_erp.setup.items.setup_items",
 	"textile_erp.setup.charges.setup_charge_templates",
 	"textile_erp.setup.routing_fields.setup_routing",
+	"textile_erp.setup.jobwork_fields.setup_jobwork",
 	"textile_erp.jobwork.warehouses.create_missing_job_worker_warehouses",
 	"textile_erp.setup.charges.normalize_gst_template_rates",
 ]
@@ -20,6 +21,7 @@ after_migrate = [
 	"textile_erp.setup.items.setup_items",
 	"textile_erp.setup.charges.setup_charge_templates",
 	"textile_erp.setup.routing_fields.setup_routing",
+	"textile_erp.setup.jobwork_fields.setup_jobwork",
 	"textile_erp.jobwork.warehouses.create_missing_job_worker_warehouses",
 	"textile_erp.setup.charges.normalize_gst_template_rates",
 ]
