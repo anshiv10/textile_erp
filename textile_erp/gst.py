@@ -103,3 +103,22 @@ def before_validate(doc, method=None):
 	set_default_place_of_supply(doc, method)
 	set_default_gst_template(doc, method)
 	set_item_tax_templates(doc, method)
+
+
+@frappe.whitelist()
+def get_default_gst_template(doctype, company, party=None):
+	if not company or not frappe.get_meta("Company").has_field("gstin"):
+		return None
+	company_gstin = (frappe.db.get_value("Company", company, "gstin") or "").strip()
+	if not company_gstin:
+		return None
+	is_sales = doctype in SALES_DOCTYPES
+	party_type = "Customer" if is_sales else "Supplier"
+	party_gstin = (frappe.db.get_value(party_type, party, "gstin") or "").strip() if party else ""
+	if not is_sales and not party_gstin:
+		return None
+	interstate = bool(party_gstin) and party_gstin[:2] != company_gstin[:2]
+	abbr = frappe.get_cached_value("Company", company, "abbr")
+	template = f"{'Output' if is_sales else 'Input'} GST {'Out-state' if interstate else 'In-state'} - {abbr}"
+	master = "Sales Taxes and Charges Template" if is_sales else "Purchase Taxes and Charges Template"
+	return template if frappe.db.exists(master, template) else None

@@ -29,14 +29,15 @@ after_migrate = [
 ROLLS = "public/js/roll_qty.js"
 ROUTE = "public/js/job_worker_routing.js"
 STOCK = "public/js/stock_aware_selection.js"
+GSTUI = "public/js/gst_ui.js"
 
 doctype_js = {
-	"Sales Invoice": ["public/js/sales_invoice.js", ROLLS, ROUTE, STOCK],
-	"Purchase Invoice": ["public/js/purchase_invoice.js", ROLLS, ROUTE],
-	"Sales Order": ROLLS,
-	"Delivery Note": [ROLLS, ROUTE, STOCK],
-	"Purchase Order": [ROLLS, ROUTE],
-	"Purchase Receipt": [ROLLS, ROUTE],
+	"Sales Invoice": ["public/js/sales_invoice.js", ROLLS, ROUTE, STOCK, GSTUI],
+	"Purchase Invoice": ["public/js/purchase_invoice.js", ROLLS, ROUTE, GSTUI],
+	"Sales Order": [ROLLS, GSTUI],
+	"Delivery Note": [ROLLS, ROUTE, STOCK, GSTUI],
+	"Purchase Order": [ROLLS, ROUTE, GSTUI],
+	"Purchase Receipt": [ROLLS, ROUTE, GSTUI],
 	"Stock Entry": ROLLS,
 	"Subcontracting Receipt": "public/js/subcontracting_receipt.js",
 	"Company": "public/js/company_guard.js",
