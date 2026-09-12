@@ -27,3 +27,18 @@ textile_erp.route_to_job_worker = function (frm, fieldname) {
 		dispatch_from_job_worker(frm) { textile_erp.route_to_job_worker(frm, "dispatch_from_job_worker"); },
 	});
 });
+
+frappe.ui.form.on("Stock Entry", {
+	setup(frm) { frm.set_query("send_to_job_worker", () => ({ filters: { supplier_group: "Job Worker", disabled: 0 } })); },
+	send_to_job_worker(frm) {
+		const jw = frm.doc.send_to_job_worker;
+		if (!jw) return;
+		if (frm.doc.purpose !== "Material Transfer") frm.set_value("stock_entry_type", "Material Transfer");
+		frappe.db.get_value("Supplier", jw, "job_work_warehouse").then((r) => {
+			const wh = r.message && r.message.job_work_warehouse;
+			if (!wh) { frappe.msgprint(__("No warehouse linked to job worker {0}.", [jw])); return; }
+			frm.set_value("to_warehouse", wh);
+			(frm.doc.items || []).forEach((row) => frappe.model.set_value(row.doctype, row.name, "t_warehouse", wh));
+		});
+	},
+});

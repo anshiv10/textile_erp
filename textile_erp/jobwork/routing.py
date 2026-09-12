@@ -2,6 +2,7 @@ import frappe
 
 PURCHASE_FIELD = "deliver_to_job_worker"
 SALES_FIELD = "dispatch_from_job_worker"
+TRANSFER_FIELD = "send_to_job_worker"
 
 
 def _warehouse_of(job_worker):
@@ -13,6 +14,8 @@ def _warehouse_of(job_worker):
 
 
 def apply_job_worker_routing(doc, method=None):
+	if doc.doctype == "Stock Entry":
+		return apply_transfer_routing(doc)
 	field = PURCHASE_FIELD if doc.meta.has_field(PURCHASE_FIELD) else SALES_FIELD if doc.meta.has_field(SALES_FIELD) else None
 	if not field or not doc.get(field):
 		return
@@ -28,3 +31,16 @@ def apply_job_worker_routing(doc, method=None):
 			row.warehouse = wh
 		if row.meta.has_field("rejected_warehouse") and not row.get("rejected_warehouse") and row.get("rejected_qty"):
 			row.rejected_warehouse = wh
+
+
+def apply_transfer_routing(doc):
+	if not doc.meta.has_field(TRANSFER_FIELD) or not doc.get(TRANSFER_FIELD):
+		return
+	if doc.purpose not in ("Material Transfer", None, ""):
+		return
+	wh = _warehouse_of(doc.get(TRANSFER_FIELD))
+	if not wh:
+		return
+	doc.to_warehouse = wh
+	for row in doc.get("items") or []:
+		row.t_warehouse = wh

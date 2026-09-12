@@ -24,6 +24,11 @@ ROUTING_FIELDS = {
 	"Purchase Invoice": _purchase_field(),
 	"Delivery Note": _sales_field(),
 	"Sales Invoice": _sales_field(),
+	"Stock Entry": [{
+		"fieldname": "send_to_job_worker", "fieldtype": "Link", "label": "Send To Job Worker", "options": "Supplier",
+		"insert_after": "to_warehouse", "depends_on": "eval:doc.purpose=='Material Transfer'",
+		"description": "Material Transfer to this job worker's warehouse (mill issue challan)",
+	}],
 }
 
 PROPERTY_SETTERS = [
