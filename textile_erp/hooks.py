@@ -50,22 +50,22 @@ ROUTING = "textile_erp.jobwork.routing.apply_job_worker_routing"
 
 doc_events = {
 	"Sales Invoice": {
-		"before_validate": [ROUTING, GST],
+		"before_validate": ["textile_erp.compat.clear_stale_batch_references", ROUTING, GST],
 		"validate": "textile_erp.brokerage.journal.validate_brokerage",
 		"on_submit": "textile_erp.brokerage.journal.make_brokerage_journal_entry",
 		"on_cancel": "textile_erp.brokerage.journal.cancel_brokerage_journal_entry",
 	},
 	"Purchase Invoice": {
-		"before_validate": [ROUTING, GST, "textile_erp.jobwork.routing.set_stock_expense_accounts"],
+		"before_validate": ["textile_erp.compat.clear_stale_batch_references", ROUTING, GST, "textile_erp.jobwork.routing.set_stock_expense_accounts"],
 		"validate": "textile_erp.brokerage.journal.validate_brokerage",
 		"on_submit": "textile_erp.brokerage.journal.make_brokerage_journal_entry",
 		"on_cancel": "textile_erp.brokerage.journal.cancel_brokerage_journal_entry",
 	},
 	"Sales Order": {"before_validate": GST},
-	"Delivery Note": {"before_validate": [ROUTING, GST]},
+	"Delivery Note": {"before_validate": ["textile_erp.compat.clear_stale_batch_references", ROUTING, GST]},
 	"Purchase Order": {"before_validate": [ROUTING, GST]},
-	"Purchase Receipt": {"before_validate": [ROUTING, GST]},
-	"Stock Entry": {"before_validate": ["textile_erp.compat.shield_stock_entry", "textile_erp.importing.apply_import_defaults", ROUTING, "textile_erp.opening.set_opening_accounts"]},
+	"Purchase Receipt": {"before_validate": ["textile_erp.compat.clear_stale_batch_references", ROUTING, GST]},
+	"Stock Entry": {"before_validate": ["textile_erp.compat.shield_stock_entry", "textile_erp.compat.clear_stale_batch_references", "textile_erp.importing.apply_import_defaults", ROUTING, "textile_erp.opening.set_opening_accounts"]},
 	"Subcontracting Receipt": {"validate": "textile_erp.subcontracting.receipt.calculate_wastage"},
 	"Bank Transaction": {"on_submit": "textile_erp.bank.auto_reconcile.on_bank_transaction_submit"},
 	"Supplier": {
