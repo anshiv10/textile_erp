@@ -39,7 +39,7 @@ doctype_js = {
 	"Delivery Note": [ROLLS, ROUTE, STOCK, GSTUI, SAVE],
 	"Purchase Order": [ROLLS, ROUTE, GSTUI],
 	"Purchase Receipt": [ROLLS, ROUTE, GSTUI, SAVE],
-	"Stock Entry": [ROLLS, ROUTE, SAVE],
+	"Stock Entry": [ROLLS, ROUTE, SAVE, STOCK],
 	"Subcontracting Receipt": "public/js/subcontracting_receipt.js",
 	"Company": "public/js/company_guard.js",
 	"Job Work Receipt": SAVE,
