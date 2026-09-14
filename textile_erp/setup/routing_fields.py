@@ -26,7 +26,7 @@ ROUTING_FIELDS = {
 	"Sales Invoice": _sales_field(),
 	"Stock Entry": [{
 		"fieldname": "send_to_job_worker", "fieldtype": "Link", "label": "Send To Job Worker", "options": "Supplier",
-		"insert_after": "stock_entry_type", "bold": 1,
+		"insert_after": "stock_entry_type", "bold": 1, "depends_on": "", "hidden": 0,
 		"description": "Material Transfer to this job worker's warehouse (mill issue challan)",
 	}],
 }
