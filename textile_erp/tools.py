@@ -14,6 +14,7 @@ def _is_opening(dt, name):
 def reset_test_transactions(dry_run=1, keep_opening=1):
 	"""bench --site <site> execute textile_erp.tools.reset_test_transactions --args '[0]'   (dry run without args)"""
 	dry_run, keep_opening = int(dry_run), int(keep_opening)
+	frappe.flags.in_migrate = True
 	docs = []
 	for dt in TRANSACTION_DOCTYPES:
 		if not frappe.db.exists("DocType", dt):
@@ -86,3 +87,4 @@ def reset_test_transactions(dry_run=1, keep_opening=1):
 	left = sum(frappe.db.count(dt, {"docstatus": 1}) for dt in TRANSACTION_DOCTYPES if frappe.db.exists("DocType", dt))
 	stock = frappe.db.sql("select count(*) from `tabBin` where actual_qty != 0")[0][0]
 	print(f"Submitted transactions remaining: {left}   |   item-warehouse rows with stock: {stock}")
+	frappe.flags.in_migrate = False
