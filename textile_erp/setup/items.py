@@ -150,6 +150,12 @@ def set_stock_settings():
 		if df.fieldtype == "Check" and "serial and batch" in (df.label or "").lower() and not ss.get(df.fieldname):
 			ss.set(df.fieldname, 1)
 			changed = True
+	if ss.meta.has_field("auto_create_serial_and_batch_bundle_for_outward") and not ss.auto_create_serial_and_batch_bundle_for_outward:
+		ss.auto_create_serial_and_batch_bundle_for_outward = 1
+		changed = True
+	if ss.meta.has_field("pick_serial_and_batch_based_on") and not ss.pick_serial_and_batch_based_on:
+		ss.pick_serial_and_batch_based_on = "FIFO"
+		changed = True
 	if ss.meta.has_field("use_serial_batch_fields") and not ss.use_serial_batch_fields:
 		ss.use_serial_batch_fields = 1
 		changed = True
