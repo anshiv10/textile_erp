@@ -30,17 +30,19 @@ ROLLS = "public/js/roll_qty.js"
 ROUTE = "public/js/job_worker_routing.js"
 STOCK = "public/js/stock_aware_selection.js"
 GSTUI = "public/js/gst_ui.js"
+SAVE = "public/js/save_submit.js"
 
 doctype_js = {
-	"Sales Invoice": ["public/js/sales_invoice.js", ROLLS, ROUTE, STOCK, GSTUI],
-	"Purchase Invoice": ["public/js/purchase_invoice.js", ROLLS, ROUTE, GSTUI],
+	"Sales Invoice": ["public/js/sales_invoice.js", ROLLS, ROUTE, STOCK, GSTUI, SAVE],
+	"Purchase Invoice": ["public/js/purchase_invoice.js", ROLLS, ROUTE, GSTUI, SAVE],
 	"Sales Order": [ROLLS, GSTUI],
-	"Delivery Note": [ROLLS, ROUTE, STOCK, GSTUI],
+	"Delivery Note": [ROLLS, ROUTE, STOCK, GSTUI, SAVE],
 	"Purchase Order": [ROLLS, ROUTE, GSTUI],
-	"Purchase Receipt": [ROLLS, ROUTE, GSTUI],
-	"Stock Entry": [ROLLS, ROUTE],
+	"Purchase Receipt": [ROLLS, ROUTE, GSTUI, SAVE],
+	"Stock Entry": [ROLLS, ROUTE, SAVE],
 	"Subcontracting Receipt": "public/js/subcontracting_receipt.js",
 	"Company": "public/js/company_guard.js",
+	"Job Work Receipt": SAVE,
 }
 
 GST = "textile_erp.gst.before_validate"
@@ -54,7 +56,7 @@ doc_events = {
 		"on_cancel": "textile_erp.brokerage.journal.cancel_brokerage_journal_entry",
 	},
 	"Purchase Invoice": {
-		"before_validate": [ROUTING, GST],
+		"before_validate": [ROUTING, GST, "textile_erp.jobwork.routing.set_stock_expense_accounts"],
 		"validate": "textile_erp.brokerage.journal.validate_brokerage",
 		"on_submit": "textile_erp.brokerage.journal.make_brokerage_journal_entry",
 		"on_cancel": "textile_erp.brokerage.journal.cancel_brokerage_journal_entry",

@@ -44,3 +44,17 @@ def apply_transfer_routing(doc):
 	doc.to_warehouse = wh
 	for row in doc.get("items") or []:
 		row.t_warehouse = wh
+
+
+def set_stock_expense_accounts(doc, method=None):
+	if doc.doctype != "Purchase Invoice" or not doc.get("update_stock"):
+		return
+	default_inventory = frappe.get_cached_value("Company", doc.company, "default_inventory_account")
+	cache = {}
+	for row in doc.get("items") or []:
+		if not row.item_code or not row.warehouse or not frappe.db.get_value("Item", row.item_code, "is_stock_item"):
+			continue
+		if row.warehouse not in cache:
+			cache[row.warehouse] = frappe.db.get_value("Warehouse", row.warehouse, "account") or default_inventory
+		if cache[row.warehouse]:
+			row.expense_account = cache[row.warehouse]
