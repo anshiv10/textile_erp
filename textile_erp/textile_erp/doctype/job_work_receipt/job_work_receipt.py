@@ -123,7 +123,7 @@ class JobWorkReceipt(Document):
 		account = frappe.db.get_value("Account", {"account_name": "Job Work Charges", "company": self.company, "is_group": 0})
 		pi = frappe.new_doc("Purchase Invoice")
 		pi.update({"supplier": self.job_worker, "company": self.company, "posting_date": self.posting_date, "set_posting_time": 1,
-			"bill_no": self.supplier_bill_no, "bill_date": self.supplier_bill_date or self.posting_date, "update_stock": 0,
+			"bill_no": self.supplier_bill_no or self.name, "bill_date": self.supplier_bill_date or self.posting_date, "update_stock": 0,
 			"job_work_receipt": self.name, "apply_tds": 1 if self.apply_tds else 0,
 			"tax_withholding_category": self.tax_withholding_category if self.apply_tds else None,
 			"remarks": _("Job work charges for {0}").format(self.name)})
