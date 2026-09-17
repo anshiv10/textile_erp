@@ -15,6 +15,7 @@ after_install = [
 	"textile_erp.setup.jobwork_fields.setup_jobwork",
 	"textile_erp.jobwork.warehouses.create_missing_job_worker_warehouses",
 	"textile_erp.setup.charges.normalize_gst_template_rates",
+	"textile_erp.policy.apply_item_batch_policy_to_all",
 ]
 after_migrate = [
 	"textile_erp.setup.install.after_migrate",
@@ -24,6 +25,7 @@ after_migrate = [
 	"textile_erp.setup.jobwork_fields.setup_jobwork",
 	"textile_erp.jobwork.warehouses.create_missing_job_worker_warehouses",
 	"textile_erp.setup.charges.normalize_gst_template_rates",
+	"textile_erp.policy.apply_item_batch_policy_to_all",
 ]
 
 ROLLS = "public/js/roll_qty.js"
@@ -68,6 +70,7 @@ doc_events = {
 	"Stock Entry": {"before_validate": ["textile_erp.compat.shield_stock_entry", "textile_erp.compat.clear_stale_batch_references", "textile_erp.importing.apply_import_defaults", ROUTING, "textile_erp.opening.set_opening_accounts"]},
 	"Subcontracting Receipt": {"validate": "textile_erp.subcontracting.receipt.calculate_wastage"},
 	"Bank Transaction": {"on_submit": "textile_erp.bank.auto_reconcile.on_bank_transaction_submit"},
+	"Item": {"validate": "textile_erp.policy.enforce_item_batch_policy"},
 	"Supplier": {
 		"after_insert": "textile_erp.jobwork.warehouses.on_supplier_update",
 		"on_update": "textile_erp.jobwork.warehouses.on_supplier_update",
