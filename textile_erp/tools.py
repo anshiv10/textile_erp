@@ -1,6 +1,7 @@
 """Maintenance commands. Run with:  bench --site <site> execute textile_erp.tools.<function> [--args '[...]']"""
 
 import frappe
+import frappe.utils.scheduler
 
 TRANSACTION_DOCTYPES = [
 	"Job Work Receipt", "Sales Invoice", "Delivery Note", "Purchase Invoice", "Purchase Receipt",
@@ -91,6 +92,41 @@ def reset_test_transactions(dry_run=1, keep_opening=1):
 
 
 # ---------------------------------------------------------------------------------------------
+# DATA IMPORT without the background queue (use when imports sit on "Pending").
+#   bench --site <site> execute textile_erp.tools.run_pending_imports            (list only)
+#   bench --site <site> execute textile_erp.tools.run_pending_imports --args '[0]' (run them now)
+# ---------------------------------------------------------------------------------------------
+
+IMPORT_ORDER = {"Item": 1, "Customer": 2, "Supplier": 3}
+
+
+def run_pending_imports(dry_run=1):
+	"""Run every Data Import that is Pending, synchronously, masters first (Item, Customer, Supplier)."""
+	from frappe.core.doctype.data_import.data_import import get_import_status, start_import
+
+	dry_run = int(dry_run)
+	pending = frappe.get_all("Data Import", filters={"status": "Pending"},
+		fields=["name", "reference_doctype", "import_file", "creation"], order_by="creation asc")
+	pending.sort(key=lambda d: (IMPORT_ORDER.get(d.reference_doctype, 9), str(d.creation)))
+	if not pending:
+		print("No Data Import is Pending.")
+		return
+	for d in pending:
+		print(f"  {d.reference_doctype:<12} {d.name}  ({d.import_file})")
+	if dry_run:
+		print("DRY RUN - nothing imported. Run with --args '[0]' to import now.")
+		return
+	for d in pending:
+		if frappe.db.get_value("Data Import", d.name, "status") != "Pending":
+			continue  # a worker picked it up meanwhile
+		print(f"importing {d.name} ...")
+		start_import(d.name)
+		frappe.db.commit()
+		st = get_import_status(d.name)
+		print(f"  -> {st.get('status')}: {st.get('success', 0)} imported, {st.get('failed', 0)} failed, of {st.get('total_records')}")
+
+
+# ---------------------------------------------------------------------------------------------
 # DIAGNOSE: one command that reports the whole state of the site and fixes the safe issues.
 #   bench --site <site> execute textile_erp.tools.diagnose              (report only)
 #   bench --site <site> execute textile_erp.tools.diagnose --args '[1]' (report + apply safe fixes)
@@ -137,6 +173,9 @@ def diagnose(fix=0):
 		flag("warehouse", bool(frappe.db.get_value("Warehouse", {"warehouse_name": "Job Workers", "company": company, "is_group": 1})), "Job Workers group")
 	ss = frappe.get_doc("Stock Settings")
 	flag("stock settings", not ss.get("allow_negative_stock"), f"allow_negative_stock = {ss.get('allow_negative_stock')}")
+	act = [f for f in ss.meta.fields if f.fieldtype == "Check" and "serial" in (f.label or "").lower() and "batch" in (f.label or "").lower() and ("activate" in (f.label or "").lower() or "enable" in (f.label or "").lower())]
+	for f in act:
+		flag("stock settings", bool(ss.get(f.fieldname)), f"{f.label} ({f.fieldname}) = {ss.get(f.fieldname)}")
 	flag("stock settings", bool(ss.get("use_serial_batch_fields")), f"use_serial_batch_fields = {ss.get('use_serial_batch_fields')}")
 	flag("stock settings", bool(ss.get("auto_create_serial_and_batch_bundle_for_outward")), f"auto_create_bundle_for_outward = {ss.get('auto_create_serial_and_batch_bundle_for_outward')}")
 	if frappe.db.exists("DocType", "GST Settings"):
@@ -206,6 +245,18 @@ def diagnose(fix=0):
 	stock = frappe.db.sql("select item_code, warehouse, actual_qty from `tabBin` where actual_qty != 0 order by warehouse, item_code", as_dict=True)
 	print("  info stock now: " + (", ".join(f"{b.item_code} @ {b.warehouse} = {b.actual_qty}" for b in stock) or "none"))
 
+	# 6b. background jobs (Data Import, e-Invoice, bank sweep all need a running worker)
+	try:
+		from rq import Worker
+		from frappe.utils.background_jobs import get_redis_conn
+		workers = Worker.all(connection=get_redis_conn())
+		flag("background", bool(workers), f"RQ workers online: {len(workers)}" + ("" if workers else "  -> docker compose -f pwd.yml restart queue-short queue-long scheduler"))
+	except Exception as e:
+		flag("background", False, f"cannot reach redis-queue: {str(e)[:100]}")
+	flag("background", not frappe.utils.scheduler.is_scheduler_inactive(), "scheduler active")
+	stuck = frappe.get_all("Data Import", filters={"status": "Pending", "creation": ["<", frappe.utils.add_to_date(None, minutes=-10)]}, pluck="name")
+	flag("background", not stuck, f"Data Imports Pending > 10 min: {stuck or 'none'}" + ("  -> textile_erp.tools.run_pending_imports" if stuck else ""))
+
 	# 7. recent errors
 	for e in frappe.get_all("Error Log", fields=["creation", "method"], order_by="creation desc", limit=8):
 		print(f"  info error log {e.creation}: {e.method}")
@@ -213,6 +264,10 @@ def diagnose(fix=0):
 	# 8. fixes
 	if fix:
 		print("-" * 78)
+		for f in act:
+			if not ss.get(f.fieldname):
+				frappe.db.set_value("Stock Settings", "Stock Settings", f.fieldname, 1)
+				print(f"  FIXED Stock Settings: {f.label} turned on")
 		for it in yarn_batched:
 			if not frappe.db.exists("Stock Ledger Entry", {"item_code": it, "is_cancelled": 0}):
 				frappe.db.set_value("Item", it, {"has_batch_no": 0, "create_new_batch": 0, "batch_number_series": ""})
