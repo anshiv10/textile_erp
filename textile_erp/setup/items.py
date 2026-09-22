@@ -145,6 +145,12 @@ def ensure_fabric_uoms():
 
 def set_stock_settings():
 	ss = frappe.get_single("Stock Settings")
+	# ERPNext v16: serial/batch on items needs the global 'Activate Serial / Batch No for Item' switch
+	for _f in ss.meta.fields:  # activate_serial_batch
+		_l = (_f.label or '').lower()
+		if _f.fieldtype == 'Check' and 'serial' in _l and 'batch' in _l and ('activate' in _l or 'enable' in _l) and not ss.get(_f.fieldname):
+			ss.set(_f.fieldname, 1)
+			changed = True
 	changed = False
 	for df in ss.meta.fields:
 		if df.fieldtype == "Check" and "serial and batch" in (df.label or "").lower() and not ss.get(df.fieldname):
