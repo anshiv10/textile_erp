@@ -76,6 +76,8 @@ def reset_test_transactions(dry_run=1, keep_opening=1):
 		if n:
 			print(f"deleted {dt}: {n}")
 
+	print(f"orphan ledger rows deleted: {_orphan_ledger_rows(delete=True)}")
+
 	orphans = 0
 	for b in frappe.get_all("Batch", pluck="name"):
 		if not frappe.db.exists("Stock Ledger Entry", {"batch_no": b, "is_cancelled": 0}):
@@ -89,6 +91,51 @@ def reset_test_transactions(dry_run=1, keep_opening=1):
 	left = sum(frappe.db.count(dt, {"docstatus": 1}) for dt in TRANSACTION_DOCTYPES if frappe.db.exists("DocType", dt))
 	stock = frappe.db.sql("select count(*) from `tabBin` where actual_qty != 0")[0][0]
 	print(f"Submitted transactions remaining: {left}   |   item-warehouse rows with stock: {stock}")
+
+
+# ---------------------------------------------------------------------------------------------
+# ORPHAN LEDGER ROWS: GL / Payment Ledger / Stock Ledger / Serial-Batch rows whose document was
+# deleted (ERPNext keeps them when a cancelled document is deleted). Harmless but untidy.
+#   bench --site <site> execute textile_erp.tools.purge_orphan_ledgers            (report only)
+#   bench --site <site> execute textile_erp.tools.purge_orphan_ledgers --args '[0]' (delete them)
+# ---------------------------------------------------------------------------------------------
+
+ORPHAN_LEDGERS = ["GL Entry", "Payment Ledger Entry", "Stock Ledger Entry", "Serial and Batch Bundle"]
+ORPHAN_VOUCHERS = ["Sales Invoice", "Purchase Invoice", "Journal Entry", "Payment Entry", "Stock Entry",
+	"Purchase Receipt", "Delivery Note", "Stock Reconciliation", "Subcontracting Receipt"]
+
+
+def _orphan_ledger_rows(delete=False, verbose=False):
+	"""Count (and optionally delete) ledger rows whose voucher no longer exists. Returns the count."""
+	total = 0
+	for led in ORPHAN_LEDGERS:
+		if not frappe.db.exists("DocType", led):
+			continue
+		for vt in ORPHAN_VOUCHERS:
+			if not frappe.db.exists("DocType", vt):
+				continue
+			cond = (f"from `tab{led}` where voucher_type=%s and ifnull(voucher_no,'')!='' "
+				f"and voucher_no not in (select name from `tab{vt}`)")
+			n = frappe.db.sql("select count(*) " + cond, vt)[0][0]
+			if n:
+				total += n
+				if verbose:
+					print(f"  {led} rows of deleted {vt}: {n}")
+				if delete:
+					frappe.db.sql("delete " + cond, vt)
+	if delete:
+		frappe.db.sql("delete from `tabSerial and Batch Entry` where parent not in (select name from `tabSerial and Batch Bundle`)")
+		frappe.db.commit()
+	return total
+
+
+def purge_orphan_ledgers(dry_run=1):
+	"""Delete ledger rows whose voucher no longer exists. dry_run=1 only reports."""
+	dry_run = int(dry_run)
+	total = _orphan_ledger_rows(delete=not dry_run, verbose=True)
+	print(f"orphan ledger rows {'found' if dry_run else 'deleted'}: {total}")
+	if dry_run and total:
+		print("DRY RUN - nothing changed. Run with --args '[0]' to delete them.")
 
 
 # ---------------------------------------------------------------------------------------------
@@ -244,6 +291,8 @@ def diagnose(fix=0):
 			print(f"  info {dt}: draft {c[0]}, submitted {c[1]}, cancelled {c[2]}")
 	stock = frappe.db.sql("select item_code, warehouse, actual_qty from `tabBin` where actual_qty != 0 order by warehouse, item_code", as_dict=True)
 	print("  info stock now: " + (", ".join(f"{b.item_code} @ {b.warehouse} = {b.actual_qty}" for b in stock) or "none"))
+	orphan_rows = _orphan_ledger_rows()
+	flag("ledger", not orphan_rows, f"ledger rows of deleted documents: {orphan_rows or 'none'}" + ("  -> textile_erp.tools.purge_orphan_ledgers" if orphan_rows else ""))
 
 	# 6b. background jobs (Data Import, e-Invoice, bank sweep all need a running worker)
 	try:
@@ -283,6 +332,8 @@ def diagnose(fix=0):
 			if frappe.db.get_value(r.parenttype, r.parent, "docstatus") == 0:
 				frappe.db.sql(f"update `tab{child}` set batch_no = NULL, serial_and_batch_bundle = NULL where parent = %s and item_code = %s", (r.parent, r.item_code))
 				print(f"  FIXED draft {r.parenttype} {r.parent}: stale batch cleared on {r.item_code}")
+		if orphan_rows:
+			print(f"  FIXED ledger rows of deleted documents removed: {_orphan_ledger_rows(delete=True)}")
 		frappe.db.commit()
 		frappe.clear_cache()
 		print("  cache cleared")
