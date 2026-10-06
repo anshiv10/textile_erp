@@ -26,8 +26,27 @@ def _state_name(code):
 		return None
 
 
+def set_party_gstin_fields(doc, method=None):
+	"""Documents created in the background (job work charge bills, imports) and manual entries where
+	no address is selected carry no GSTIN fields, so India Compliance falls back to treating the
+	supply as local and rejects IGST ("Cannot charge IGST for intra-state supplies"). Fill the
+	company / party GSTIN from the masters so IC judges in-state vs out-state exactly the way
+	set_default_gst_template does. Fills only empty fields, and only when no address is selected."""
+	company_gstin = _company_gstin(doc)
+	if company_gstin and doc.meta.has_field("company_gstin") and not doc.get("company_gstin") \
+			and not doc.get("company_address") and not doc.get("billing_address"):
+		doc.company_gstin = company_gstin
+	is_sales, _, _, party_gstin = _party(doc)
+	if not party_gstin:
+		return
+	field, address_field = ("billing_address_gstin", "customer_address") if is_sales else ("supplier_gstin", "supplier_address")
+	if doc.meta.has_field(field) and not doc.get(field) and not doc.get(address_field):
+		doc.set(field, party_gstin)
+
+
 def set_default_place_of_supply(doc, method=None):
-	"""No address on the document: registered party -> state of its GSTIN; unregistered -> company's state."""
+	"""No address on the document: sales -> the customer's GSTIN state (company's if unregistered);
+	purchases -> the company's own state (the recipient of an inward supply)."""
 	if not doc.meta.has_field("place_of_supply") or doc.get("place_of_supply"):
 		return
 	if doc.get("customer_address") or doc.get("supplier_address") or doc.get("shipping_address_name"):
@@ -35,8 +54,8 @@ def set_default_place_of_supply(doc, method=None):
 	company_gstin = _company_gstin(doc)
 	if not company_gstin:
 		return
-	_, _, _, party_gstin = _party(doc)
-	code = party_gstin[:2] if len(party_gstin) >= 2 else company_gstin[:2]
+	is_sales, _, _, party_gstin = _party(doc)
+	code = party_gstin[:2] if is_sales and len(party_gstin) >= 2 else company_gstin[:2]
 	state = _state_name(code)
 	if state:
 		doc.place_of_supply = f"{code}-{state}"
@@ -56,6 +75,9 @@ def set_default_gst_template(doc, method=None):
 	if not company_gstin:
 		return
 	is_sales, _, _, party_gstin = _party(doc)
+	doc_gstin_field = "billing_address_gstin" if is_sales else "supplier_gstin"
+	if doc.meta.has_field(doc_gstin_field) and (doc.get(doc_gstin_field) or "").strip():
+		party_gstin = doc.get(doc_gstin_field).strip()  # the GSTIN IC will validate against (address-fetched or set above)
 	if not is_sales and not party_gstin:
 		return
 	interstate = bool(party_gstin) and party_gstin[:2] != company_gstin[:2]
@@ -100,6 +122,7 @@ def before_validate(doc, method=None):
 		from textile_erp.opening import set_opening_accounts
 		set_opening_accounts(doc)
 		return
+	set_party_gstin_fields(doc, method)
 	set_default_place_of_supply(doc, method)
 	set_default_gst_template(doc, method)
 	set_item_tax_templates(doc, method)

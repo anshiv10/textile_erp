@@ -19,6 +19,20 @@ class JobWorkReceipt(Document):
 		self.set_totals()
 		self.set_charges()
 		self.validate_stock()
+		self.notify_interstate_gst()
+
+	def notify_interstate_gst(self):
+		if flt(self.charges_amount) <= 0:
+			return
+		if not (frappe.get_meta("Supplier").has_field("gstin") and frappe.get_meta("Company").has_field("gstin")):
+			return
+		company_gstin = (frappe.db.get_value("Company", self.company, "gstin") or "").strip()
+		party_gstin = (frappe.db.get_value("Supplier", self.job_worker, "gstin") or "").strip()
+		if company_gstin and party_gstin and party_gstin[:2] != company_gstin[:2]:
+			frappe.msgprint(
+				_("{0} is registered in another state (GSTIN {1}): IGST will be charged on its job work bill. If this mill is actually in your own state, correct the GSTIN on the Supplier before submitting.").format(
+					frappe.bold(self.job_worker_name or self.job_worker), party_gstin),
+				alert=True, indicator="orange")
 
 	def set_warehouses(self):
 		from textile_erp.jobwork.warehouses import ensure_job_worker_warehouse

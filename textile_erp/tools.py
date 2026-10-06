@@ -282,7 +282,11 @@ def diagnose(fix=0):
 	for s in frappe.get_all("Supplier", filters={"supplier_group": "Job Worker", "disabled": 0}, fields=["name", "job_work_warehouse", "tax_withholding_category", "gstin"]):
 		flag("job worker", bool(s.job_work_warehouse), f"{s.name}: warehouse = {s.job_work_warehouse}")
 		flag("job worker", bool(s.tax_withholding_category), f"{s.name}: TDS category = {s.tax_withholding_category or 'MISSING'}")
-		print(f"  info {s.name}: GSTIN = {s.gstin or 'none (no GST on job work bills)'}")
+		if s.gstin and company and gstin:
+			tag = "in-state: CGST/SGST" if s.gstin[:2] == gstin[:2] else "OTHER STATE: IGST on its job work bills"
+			print(f"  info {s.name}: GSTIN = {s.gstin} ({tag})")
+		else:
+			print(f"  info {s.name}: GSTIN = {s.gstin or 'none (no GST on job work bills)'}")
 
 	# 6. documents
 	for dt in ("Purchase Invoice", "Sales Invoice", "Stock Entry", "Job Work Receipt", "Payment Entry", "Journal Entry"):
