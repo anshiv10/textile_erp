@@ -32,19 +32,19 @@ ROLLS = "public/js/roll_qty.js"
 ROUTE = "public/js/job_worker_routing.js"
 STOCK = "public/js/stock_aware_selection.js"
 GSTUI = "public/js/gst_ui.js"
-SAVE = "public/js/save_submit.js"
+# One "Save & Submit" button on every submittable form: new entries submit in one click
+app_include_js = ["/assets/textile_erp/js/save_submit.js"]
 
 doctype_js = {
-	"Sales Invoice": ["public/js/sales_invoice.js", ROLLS, ROUTE, STOCK, GSTUI, SAVE],
-	"Purchase Invoice": ["public/js/purchase_invoice.js", ROLLS, ROUTE, GSTUI, SAVE],
+	"Sales Invoice": ["public/js/sales_invoice.js", ROLLS, ROUTE, STOCK, GSTUI],
+	"Purchase Invoice": ["public/js/purchase_invoice.js", ROLLS, ROUTE, GSTUI],
 	"Sales Order": [ROLLS, GSTUI],
-	"Delivery Note": [ROLLS, ROUTE, STOCK, GSTUI, SAVE],
+	"Delivery Note": [ROLLS, ROUTE, STOCK, GSTUI],
 	"Purchase Order": [ROLLS, ROUTE, GSTUI],
-	"Purchase Receipt": [ROLLS, ROUTE, GSTUI, SAVE],
-	"Stock Entry": [ROLLS, ROUTE, SAVE, STOCK],
+	"Purchase Receipt": [ROLLS, ROUTE, GSTUI],
+	"Stock Entry": [ROLLS, ROUTE, STOCK],
 	"Subcontracting Receipt": "public/js/subcontracting_receipt.js",
 	"Company": "public/js/company_guard.js",
-	"Job Work Receipt": SAVE,
 }
 
 GST = "textile_erp.gst.before_validate"
