@@ -9,9 +9,20 @@
 // load-order and subclass pitfalls that left earlier versions inert.
 frappe.provide("textile_erp");
 
+textile_erp.form_has_workflow = function (frm) {
+	// Isolated and defensive: on some benches get_state() throws (a broken/foreign
+	// workflow). A throw here must NOT make the form ineligible - treat it as "no
+	// workflow" so our button still applies.
+	try {
+		return !!(frm.states && frm.states.get_state && frm.states.get_state());
+	} catch (e) {
+		return false;
+	}
+};
+
 textile_erp.eligible_for_one_click = function (frm) {
 	try {
-		return !!(
+		var base = !!(
 			frm &&
 			frm.meta &&
 			frm.meta.is_submittable &&
@@ -19,9 +30,10 @@ textile_erp.eligible_for_one_click = function (frm) {
 			frm.doc.docstatus === 0 &&
 			!frm.save_disabled &&
 			frm.perm && frm.perm[0] && frm.perm[0].submit &&
-			!(frm.states && frm.states.get_state && frm.states.get_state()) &&
 			!(frm.page && frm.page.current_view_name === "print")
 		);
+		if (!base) return false;
+		return !textile_erp.form_has_workflow(frm);
 	} catch (e) {
 		return false;
 	}
