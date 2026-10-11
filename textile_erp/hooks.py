@@ -32,19 +32,29 @@ ROLLS = "public/js/roll_qty.js"
 ROUTE = "public/js/job_worker_routing.js"
 STOCK = "public/js/stock_aware_selection.js"
 GSTUI = "public/js/gst_ui.js"
-# One "Save & Submit" button on every submittable form: new entries submit in one click
+ONE_CLICK = "public/js/one_click_submit.js"
+
+# One "Save & Submit" button on every submittable form: new entries submit in one click.
+# Delivered per-doctype via doctype_js (embedded in the form meta - the channel proven on
+# this stack); the script patches the Toolbar class once and idempotently, so the first
+# form opened installs it for every doctype in the session. app_include_js kept as a
+# second channel where the desk page picks it up.
 app_include_js = ["/assets/textile_erp/js/one_click_submit.js"]
 
 doctype_js = {
-	"Sales Invoice": ["public/js/sales_invoice.js", ROLLS, ROUTE, STOCK, GSTUI],
-	"Purchase Invoice": ["public/js/purchase_invoice.js", ROLLS, ROUTE, GSTUI],
-	"Sales Order": [ROLLS, GSTUI],
-	"Delivery Note": [ROLLS, ROUTE, STOCK, GSTUI],
-	"Purchase Order": [ROLLS, ROUTE, GSTUI],
-	"Purchase Receipt": [ROLLS, ROUTE, GSTUI],
-	"Stock Entry": [ROLLS, ROUTE, STOCK],
-	"Subcontracting Receipt": "public/js/subcontracting_receipt.js",
+	"Sales Invoice": ["public/js/sales_invoice.js", ROLLS, ROUTE, STOCK, GSTUI, ONE_CLICK],
+	"Purchase Invoice": ["public/js/purchase_invoice.js", ROLLS, ROUTE, GSTUI, ONE_CLICK],
+	"Sales Order": [ROLLS, GSTUI, ONE_CLICK],
+	"Delivery Note": [ROLLS, ROUTE, STOCK, GSTUI, ONE_CLICK],
+	"Purchase Order": [ROLLS, ROUTE, GSTUI, ONE_CLICK],
+	"Purchase Receipt": [ROLLS, ROUTE, GSTUI, ONE_CLICK],
+	"Stock Entry": [ROLLS, ROUTE, STOCK, ONE_CLICK],
+	"Subcontracting Receipt": ["public/js/subcontracting_receipt.js", ONE_CLICK],
 	"Company": "public/js/company_guard.js",
+	"Job Work Receipt": [ONE_CLICK],
+	"Payment Entry": [ONE_CLICK],
+	"Journal Entry": [ONE_CLICK],
+	"Bank Transaction": [ONE_CLICK],
 }
 
 GST = "textile_erp.gst.before_validate"
