@@ -62,11 +62,20 @@ textile_erp.install_one_click = function (frm) {
 	// Intercept every primary-action set on THIS page. When frappe sets Save/Submit on a
 	// submittable draft, replace it in place with our one-click handler.
 	page.set_primary_action = function (label, action, icon) {
-		if (
-			textile_erp.eligible_for_one_click(frm) &&
-			(label === __("Save") || label === __("Submit"))
-		) {
-			return original_set_primary_action(__("Save & Submit"), () => textile_erp.one_click_action(frm), icon);
+		// On an eligible submittable draft, every primary action becomes our one-click
+		// button, whatever label frappe passes (initial "Save", the dirty handler, etc).
+		// A guard flag prevents our own re-entrant call from looping.
+		if (!page.__one_click_painting && textile_erp.eligible_for_one_click(frm)) {
+			page.__one_click_painting = true;
+			try {
+				return original_set_primary_action(
+					__("Save & Submit"),
+					() => textile_erp.one_click_action(frm),
+					icon
+				);
+			} finally {
+				page.__one_click_painting = false;
+			}
 		}
 		return original_set_primary_action(label, action, icon);
 	};
