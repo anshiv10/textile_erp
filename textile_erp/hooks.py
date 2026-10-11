@@ -33,7 +33,7 @@ ROUTE = "public/js/job_worker_routing.js"
 STOCK = "public/js/stock_aware_selection.js"
 GSTUI = "public/js/gst_ui.js"
 # One "Save & Submit" button on every submittable form: new entries submit in one click
-app_include_js = ["/assets/textile_erp/js/save_submit.js"]
+app_include_js = ["/assets/textile_erp/js/one_click_submit.js"]
 
 doctype_js = {
 	"Sales Invoice": ["public/js/sales_invoice.js", ROLLS, ROUTE, STOCK, GSTUI],
