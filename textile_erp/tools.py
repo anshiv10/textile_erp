@@ -343,3 +343,51 @@ def diagnose(fix=0):
 		print("  cache cleared")
 	print("-" * 78)
 	print(f"RESULT: {issues} issue(s) flagged" + ("" if fix else "   (run with --args '[1]' to apply the safe fixes)"))
+
+
+# ---------------------------------------------------------------------------------------------
+# REPORTS SMOKE TEST: runs every Textile ERP report with its default filters on the real data.
+#   bench --site <site> execute textile_erp.tools.check_reports
+# ---------------------------------------------------------------------------------------------
+
+REPORT_MODULES = [
+	("Party Outstanding", "party_outstanding", [{}, {"type": "Payable"}]),
+	("Textile Business Summary", "textile_business_summary", [{}]),
+	("Fabric Stock Balance (Roll-Wise)", "fabric_stock_balance_(roll_wise)", [{}]),
+	("Job Work Wastage Analysis", "job_work_wastage_analysis", [{}]),
+	("Brokerage Payable", "brokerage_payable", [{}]),
+]
+
+
+def check_reports():
+	"""Run each report and print OK with its line count, or the error."""
+	import importlib
+
+	fy_start = frappe.utils.get_first_day(frappe.utils.add_months(frappe.utils.nowdate(), -11))
+	base = {
+		"company": frappe.db.get_single_value("Global Defaults", "default_company"),
+		"report_date": frappe.utils.nowdate(),
+		"from_date": fy_start,
+		"to_date": frappe.utils.nowdate(),
+	}
+	failed = 0
+	for title, folder, variants in REPORT_MODULES:
+		if not frappe.db.exists("Report", title):
+			print(f"  !!   {title}: Report record missing - run bench migrate")
+			failed += 1
+			continue
+		try:
+			module = importlib.import_module(f"textile_erp.textile_erp.report.{folder}.{folder}")
+		except Exception as e:
+			print(f"  !!   {title}: cannot load report code: {e}")
+			failed += 1
+			continue
+		for extra in variants:
+			label = title + (f" [{', '.join(f'{k}={v}' for k, v in extra.items())}]" if extra else "")
+			try:
+				result = module.execute(frappe._dict(base, **extra))
+				print(f"  OK   {label}: {len(result[1] or [])} line(s)")
+			except Exception as e:
+				failed += 1
+				print(f"  !!   {label}: {type(e).__name__}: {str(e)[:200]}")
+	print(f"RESULT: {failed} report(s) failed")
