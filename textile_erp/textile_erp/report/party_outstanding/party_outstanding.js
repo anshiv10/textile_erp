@@ -7,7 +7,7 @@
    ══════════════════════════════════════════════════════════════════════════════ */
 frappe.provide("textile_erp");
 (function () {
-	const VERSION = 1;
+	const VERSION = 2;
 	if (textile_erp.report_ui && textile_erp.report_ui.version >= VERSION) return;
 
 	const ACCENT = {
@@ -22,8 +22,8 @@ frappe.provide("textile_erp");
 		s.id = "tx-report-ui-styles";
 		s.textContent = `
 			.tx-kpi-wrap { padding: 4px 0 6px; margin-bottom: 8px; }
-			.tx-kpi-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; padding: 10px 2px 6px; }
-			@media (max-width: 991px) { .tx-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+			.tx-kpi-grid { display: grid; grid-template-columns: repeat(var(--tx-cols, 3), minmax(0, 1fr)); gap: 12px; padding: 10px 2px 6px; }
+			@media (max-width: 767px) { .tx-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 			.tx-kpi-card { background: var(--card-bg, #fff); border: 1px solid var(--border-color, #d1d8dd); border-radius: 12px;
 				padding: 18px 14px 16px; text-align: center; position: relative; overflow: hidden;
 				box-shadow: 0 1px 4px rgba(0,0,0,.06); transition: transform .18s ease, box-shadow .18s ease; }
@@ -67,7 +67,7 @@ frappe.provide("textile_erp");
 			return;
 		}
 		const icon = (report.__tx_cfg && report.__tx_cfg.icon) || (() => "📊");
-		$wrap.html(`<div class="tx-kpi-grid">${cards.map((c) => `
+		$wrap.html(`<div class="tx-kpi-grid" style="--tx-cols:${ui.cols(cards.length)}">${cards.map((c) => `
 			<div class="tx-kpi-card" style="--tx-accent:${ACCENT[c.indicator] || ACCENT.Blue}">
 				<div class="tx-kpi-icon">${icon(c)}</div>
 				<div class="tx-kpi-val" data-count="${c.datatype === "Int" ? cint(c.value) : ""}">${ui.fmt(c.value, c.datatype, c.currency)}</div>
@@ -78,6 +78,9 @@ frappe.provide("textile_erp");
 			if (target > 0) ui.count_up(this, target);
 		});
 	};
+
+	/* cards always fill two rows: 6 -> 3 + 3, 8 -> 4 + 4, 5 -> 3 + 2 */
+	ui.cols = (n) => (n <= 3 ? n : Math.min(4, Math.ceil(n / 2)));
 
 	ui.count_up = function (el, target) {
 		let cur = 0;
@@ -160,7 +163,7 @@ frappe.provide("textile_erp");
 		const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>
 			body{font-family:Arial,sans-serif;font-size:9.5px;margin:18px 22px;color:#1e293b}
 			h1{font-size:15px;margin:0 0 3px;color:#1e3a5f}.m{font-size:9px;color:#64748b;margin-bottom:10px}
-			.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
+			.cards{display:grid;grid-template-columns:repeat(${ui.cols((report.__tx_summary || []).length)},1fr);gap:8px;margin-bottom:12px}
 			.c{border:1px solid #e2e8f0;border-radius:6px;padding:7px;text-align:center}.c b{display:block;font-size:12px}
 			.c span{font-size:8px;color:#64748b;text-transform:uppercase}
 			table{width:100%;border-collapse:collapse}th{background:#1e3a5f;color:#fff;padding:5px 6px;font-size:9px;text-align:left;border:1px solid #2563eb}
