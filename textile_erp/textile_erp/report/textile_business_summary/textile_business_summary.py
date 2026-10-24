@@ -28,14 +28,18 @@ def execute(filters=None):
 	f.from_date = getdate(f.get("from_date") or f.report_date)
 	f.to_date = getdate(f.get("to_date") or f.report_date)
 	currency = company_currency(f.company)
-	data, totals = [], frappe._dict()
+	data, totals, state = [], frappe._dict(), {"section": None}
 
-	def head(text):
-		data.append(frappe._dict(particulars=text, bold=1, indent=0))
+	# every row carries its section (and key lines a key) so the page script can chart them
+	def head(text, section):
+		state["section"] = section
+		data.append(frappe._dict(particulars=text, bold=1, indent=0, section=section))
 
-	def line(text, amount=None, qty=None, remarks=None, bold=0):
+	def line(text, amount=None, qty=None, remarks=None, bold=0, key=None):
 		data.append(
 			frappe._dict(
+				section=state["section"],
+				key=key,
 				particulars=text,
 				amount=amount,
 				qty=qty,
@@ -59,7 +63,7 @@ def execute(filters=None):
 		f.company,
 		as_dict=True,
 	)
-	head(_("STOCK (today)"))
+	head(_("STOCK (today)"), "stock")
 	godown = [b for b in bins if b.warehouse not in mills]
 	line(_("At godown"), sum(flt(b.value) for b in godown), sum(flt(b.qty) for b in godown))
 	for b in sorted((b for b in bins if b.warehouse in mills), key=lambda b: -flt(b.value)):
@@ -67,10 +71,10 @@ def execute(filters=None):
 			_("At {0}").format(names.get(mills[b.warehouse]) or mills[b.warehouse]), flt(b.value), flt(b.qty)
 		)
 	totals.stock = sum(flt(b.value) for b in bins)
-	line(_("Total Stock"), totals.stock, sum(flt(b.qty) for b in bins), bold=1)
+	line(_("Total Stock"), totals.stock, sum(flt(b.qty) for b in bins), bold=1, key="total")
 
 	# JOB WORK --------------------------------------------------------------------------------
-	head(_("JOB WORK ({0})").format(period))
+	head(_("JOB WORK ({0})").format(period), "job_work")
 	receipts = job_work(f)
 	by_mill = {}
 	for r in receipts:
@@ -102,33 +106,39 @@ def execute(filters=None):
 				for k in ("raw", "finished", "salvage", "charges", "unpaid")
 			},
 		)
-		line(_("Total Job Work Charges"), t.charges, t.finished, job_work_remark(t), bold=1)
+		line(_("Total Job Work Charges"), t.charges, t.finished, job_work_remark(t), bold=1, key="total")
 	else:
 		line(_("No job work receipts in this period"))
 
 	# SALES -----------------------------------------------------------------------------------
-	head(_("SALES ({0})").format(period))
+	head(_("SALES ({0})").format(period), "sales")
 	s = sales(f)
 	totals.sales, totals.gross_profit = s.taxable, s.taxable - s.cost
-	line(_("Sales (before GST)"), s.taxable, s.qty, _("{0} bills").format(s.bills))
-	line(_("Cost of goods sold"), s.cost, remarks=_("yarn + job work charges, from stock valuation"))
+	line(_("Sales (before GST)"), s.taxable, s.qty, _("{0} bills").format(s.bills), key="sales")
+	line(
+		_("Cost of goods sold"),
+		s.cost,
+		remarks=_("yarn + job work charges, from stock valuation"),
+		key="cost",
+	)
 	line(
 		_("Gross Profit"),
 		totals.gross_profit,
 		remarks=_("{0}% of sales").format(flt(totals.gross_profit / s.taxable * 100, 2) if s.taxable else 0),
 		bold=1,
+		key="gross_profit",
 	)
-	line(_("Brokerage"), s.brokerage, remarks=_("see Brokerage Payable"))
-	line(_("Profit after brokerage"), totals.gross_profit - s.brokerage, bold=1)
+	line(_("Brokerage"), s.brokerage, remarks=_("see Brokerage Payable"), key="brokerage")
+	line(_("Profit after brokerage"), totals.gross_profit - s.brokerage, bold=1, key="after_brokerage")
 
 	# PURCHASES -------------------------------------------------------------------------------
-	head(_("PURCHASES ({0})").format(period))
+	head(_("PURCHASES ({0})").format(period), "purchases")
 	p = purchases(f)
 	line(_("Purchases (before GST, excluding job work bills)"), p.net, p.qty, _("{0} bills").format(p.bills))
 	line(_("TDS deducted (job work and others)"), p.tds)
 
 	# OUTSTANDING -----------------------------------------------------------------------------
-	head(_("OUTSTANDING (as on {0})").format(as_on))
+	head(_("OUTSTANDING (as on {0})").format(as_on), "outstanding")
 	rec = outstanding_rows("Receivable", f.company, f.report_date)
 	pay = outstanding_rows("Payable", f.company, f.report_date, ageing_based_on="Due Date")
 	totals.receivable = sum(r.outstanding for r in rec)
@@ -146,12 +156,12 @@ def execute(filters=None):
 	line(_("Of which overdue"), overdue)
 
 	# CASH & BANK -----------------------------------------------------------------------------
-	head(_("CASH & BANK (as on {0})").format(as_on))
+	head(_("CASH & BANK (as on {0})").format(as_on), "cash")
 	totals.cash = 0.0
 	for name, balance in cash_and_bank(f):
 		line(name, balance)
 		totals.cash += balance
-	line(_("Total Cash & Bank"), totals.cash, bold=1)
+	line(_("Total Cash & Bank"), totals.cash, bold=1, key="total")
 
 	summary = [
 		card(totals.stock, "Stock Value", currency=currency),
