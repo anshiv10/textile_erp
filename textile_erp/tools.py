@@ -7,6 +7,8 @@ TRANSACTION_DOCTYPES = [
 	"Job Work Receipt", "Sales Invoice", "Delivery Note", "Purchase Invoice", "Purchase Receipt",
 	"Subcontracting Receipt", "Subcontracting Order", "Stock Entry", "Stock Reconciliation",
 	"Payment Entry", "Journal Entry", "Bank Transaction",
+	"Sales Order", "Purchase Order", "Quotation", "Supplier Quotation", "Material Request", "Pick List",
+	"Payment Request", "Landed Cost Voucher",
 ]
 
 
@@ -14,10 +16,21 @@ def _is_opening(dt, name):
 	return frappe.get_meta(dt).has_field("is_opening") and frappe.db.get_value(dt, name, "is_opening") == "Yes"
 
 
+def _old_books():
+	"""Journal Entries imported from iFAS (textile_erp.legacy_books) - real history, never test data.
+	Remove them only with textile_erp.legacy_books.remove_books."""
+	if not frappe.get_meta("Journal Entry").has_field("ifas_voucher"):
+		return set()
+	return set(frappe.get_all("Journal Entry", filters={"ifas_voucher": ["is", "set"]}, pluck="name"))
+
+
 def reset_test_transactions(dry_run=1, keep_opening=1):
 	"""Cancel and delete ALL transactions (in dependency order), keep masters and opening documents.
 	dry_run=1 only reports. Example:  bench --site frontend execute textile_erp.tools.reset_test_transactions --args '[0]'"""
 	dry_run, keep_opening = int(dry_run), int(keep_opening)
+	old_books = _old_books()
+	if old_books:
+		print(f"Kept: {len(old_books)} entries imported from the old books (iFAS)")
 	docs = []
 	for dt in TRANSACTION_DOCTYPES:
 		if not frappe.db.exists("DocType", dt):
@@ -25,11 +38,12 @@ def reset_test_transactions(dry_run=1, keep_opening=1):
 		meta = frappe.get_meta(dt)
 		date_field = "posting_date" if meta.has_field("posting_date") else "date" if meta.has_field("date") else "creation"
 		for d in frappe.get_all(dt, filters={"docstatus": 1}, fields=["name", "creation", f"{date_field} as d"]):
-			if keep_opening and _is_opening(dt, d.name):
+			if (keep_opening and _is_opening(dt, d.name)) or (dt == "Journal Entry" and d.name in old_books):
 				continue
 			docs.append((str(d.d), str(d.creation), dt, d.name))
 	docs.sort(reverse=True)
-	drafts = {dt: frappe.db.count(dt, {"docstatus": ["in", [0, 2]]}) for dt in TRANSACTION_DOCTYPES if frappe.db.exists("DocType", dt)}
+	drafts = {dt: len([n for n in frappe.get_all(dt, filters={"docstatus": ["in", [0, 2]]}, pluck="name") if n not in old_books])
+		for dt in TRANSACTION_DOCTYPES if frappe.db.exists("DocType", dt)}
 	print(f"Submitted documents to cancel: {len(docs)}")
 	for dt, n in drafts.items():
 		if n:
@@ -64,7 +78,7 @@ def reset_test_transactions(dry_run=1, keep_opening=1):
 			continue
 		n = 0
 		for name in frappe.get_all(dt, filters={"docstatus": ["in", [0, 2]]}, pluck="name"):
-			if keep_opening and _is_opening(dt, name):
+			if (keep_opening and _is_opening(dt, name)) or name in old_books:
 				continue
 			try:
 				frappe.delete_doc(dt, name, force=1, ignore_permissions=True)
@@ -89,8 +103,100 @@ def reset_test_transactions(dry_run=1, keep_opening=1):
 				frappe.db.rollback()
 	print(f"orphan batches deleted: {orphans}")
 	left = sum(frappe.db.count(dt, {"docstatus": 1}) for dt in TRANSACTION_DOCTYPES if frappe.db.exists("DocType", dt))
+	left -= len(old_books & set(frappe.get_all("Journal Entry", filters={"docstatus": 1}, pluck="name")))
 	stock = frappe.db.sql("select count(*) from `tabBin` where actual_qty != 0")[0][0]
 	print(f"Submitted transactions remaining: {left}   |   item-warehouse rows with stock: {stock}")
+
+
+# ---------------------------------------------------------------------------------------------
+# GO-LIVE CLEAN-UP: one command that leaves a clean company for the real data.
+#   bench --site <site> execute textile_erp.tools.clean_for_go_live            (report only)
+#   bench --site <site> execute textile_erp.tools.clean_for_go_live --args '[0]' (clean now)
+# Keeps: company, chart of accounts, warehouses, items, customers, suppliers, tax templates, settings.
+# Removes: every transaction (opening ones too), their ledger rows and roll batches, repost queue,
+# error log. Disables masters named "demo". Bill numbering restarts at 00001.
+# ---------------------------------------------------------------------------------------------
+
+DEMO_MASTERS = ["Item", "Customer", "Supplier"]
+
+
+def _numbered_names():
+	"""Names of all numbered documents (transactions and roll batches)."""
+	names = []
+	for dt in [*TRANSACTION_DOCTYPES, "Batch"]:
+		if frappe.db.exists("DocType", dt):
+			names += frappe.get_all(dt, pluck="name")
+	return names
+
+
+def _series_used_by(prefix, names):
+	return any(n.startswith(prefix) and n[len(prefix):].isdigit() for n in names)
+
+
+def _reset_series(names_before, apply):
+	"""Restart the counter of every naming series used only by documents that are now gone."""
+	names_after = _numbered_names() if apply else []
+	reset = []
+	for prefix, current in frappe.db.sql("select name, current from `tabSeries` where current > 0"):
+		if not prefix or not _series_used_by(prefix, names_before):
+			continue
+		if apply and _series_used_by(prefix, names_after):
+			print(f"  KEEP  {prefix}: documents with this series still exist (counter stays {current})")
+			continue
+		reset.append(prefix)
+		print(f"  {'RESET' if apply else 'will reset'} {prefix}: {current} -> 0 (next number {prefix}{'1'.zfill(5)})")
+		if apply:
+			frappe.db.sql("update `tabSeries` set current = 0 where name = %s", prefix)
+	if not reset:
+		print("  nothing to reset")
+	return reset
+
+
+def clean_for_go_live(dry_run=1):
+	"""Remove all trial / demo data before the real data is entered. dry_run=1 only reports."""
+	dry_run = int(dry_run)
+	company = frappe.db.get_single_value("Global Defaults", "default_company")
+	print("=" * 78)
+	print(f"GO-LIVE CLEAN-UP  {company}  {'(DRY RUN - nothing is changed)' if dry_run else ''}")
+	print("=" * 78)
+	names_before = _numbered_names()
+
+	print("1. Transactions (opening entries included) and their ledger rows / roll batches")
+	reset_test_transactions(dry_run, keep_opening=0)
+
+	print("2. Repost queue and error log")
+	for dt in ("Repost Item Valuation", "Error Log"):
+		if frappe.db.exists("DocType", dt) and not frappe.get_meta(dt).get_table_fields():
+			n = frappe.db.count(dt)
+			print(f"  {dt}: {n}")
+			if n and not dry_run:
+				frappe.db.delete(dt)
+
+	print("3. Demo masters (disabled, not deleted)")
+	found = 0
+	for dt in DEMO_MASTERS:
+		for name in frappe.get_all(dt, filters={"name": ["like", "%demo%"], "disabled": 0}, pluck="name"):
+			found += 1
+			print(f"  {dt}: {name}")
+			if not dry_run:
+				frappe.db.set_value(dt, name, "disabled", 1)
+	if not found:
+		print("  none")
+
+	print("4. Bill numbering")
+	_reset_series(names_before, apply=not dry_run)
+
+	if dry_run:
+		print("DRY RUN - nothing changed. Run with --args '[0]' to clean.")
+		return
+	frappe.db.commit()
+	frappe.clear_cache()
+	left = sum(frappe.db.count(dt, {"docstatus": ["!=", 2]}) for dt in TRANSACTION_DOCTYPES if frappe.db.exists("DocType", dt))
+	left -= len(_old_books() & set(frappe.get_all("Journal Entry", filters={"docstatus": ["!=", 2]}, pluck="name")))
+	stock = frappe.db.sql("select count(*) from `tabBin` where actual_qty != 0")[0][0]
+	print("-" * 78)
+	print(f"RESULT: transactions left {left} | item-warehouse rows with stock {stock} | "
+		f"orphan ledger rows {_orphan_ledger_rows()}")
 
 
 # ---------------------------------------------------------------------------------------------
