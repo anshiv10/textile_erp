@@ -116,6 +116,8 @@ def set_item_tax_templates(doc, method=None):
 
 
 def before_validate(doc, method=None):
+	if doc.flags.get("legacy_import"):   # old bills from iFAS carry their own taxes (textile_erp.legacy_books)
+		return
 	from textile_erp.importing import apply_import_defaults
 	apply_import_defaults(doc)
 	if doc.get("is_opening") == "Yes":
