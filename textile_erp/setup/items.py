@@ -29,7 +29,17 @@ TEMPLATES = [
 ]
 
 
+def enable_serial_batch():
+	"""ERPNext v16 new sites ship with Stock Settings > 'Activate Serial / Batch No for Item' off, and then refuse
+	to save any item with Has Batch No. Roll-wise fabric needs it, so switch it on before the templates are made."""
+	if frappe.get_meta("Stock Settings").has_field("enable_serial_and_batch_no_for_item") and not frappe.db.get_single_value(
+		"Stock Settings", "enable_serial_and_batch_no_for_item"):
+		frappe.db.set_single_value("Stock Settings", "enable_serial_and_batch_no_for_item", 1)
+		frappe.clear_document_cache("Stock Settings", "Stock Settings")
+
+
 def setup_items():
+	enable_serial_batch()
 	create_item_groups()
 	create_hsn_codes()
 	create_templates()
