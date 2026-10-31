@@ -559,6 +559,33 @@ def _attach(z, apply):
 
 
 # ------------------------------------------------------------------------------------------ commands
+class _JobsInlineWhenQueueFull:
+	"""Deleting a document queues a small clean-up job (delete_dynamic_links). Where no background worker is
+	running (a laptop bench without 'bench start'), hundreds of them fill the queue and Frappe refuses the next
+	one ('Too many queued background jobs'). Then the job simply runs here, right away."""
+
+	def __enter__(self):
+		import frappe.utils.background_jobs as bj
+		self.bj, self.orig, self.inline = bj, bj.enqueue, 0
+
+		def enqueue(method, *args, **kwargs):
+			try:
+				return self.orig(method, *args, **kwargs)
+			except frappe.QueueOverloaded:
+				self.inline += 1
+				kwargs.pop("enqueue_after_commit", None)
+				return self.orig(method, *args, **dict(kwargs, now=True))
+
+		frappe.enqueue = bj.enqueue = enqueue
+		return self
+
+	def __exit__(self, *exc):
+		frappe.enqueue = self.bj.enqueue = self.orig
+		if self.inline:
+			print(f"   ({self.inline} background clean-up jobs ran directly: the job queue was full)")
+		return False
+
+
 def import_books(dry_run=1, file_url=None, company=None):
 	"""Import the iFAS books. dry_run=1 only reports; run again with --args '[0]' to import."""
 	dry_run = int(dry_run)
@@ -605,6 +632,11 @@ def import_books(dry_run=1, file_url=None, company=None):
 		print("DRY RUN - nothing changed. Run with --args '[0]' to import.")
 		return
 
+	with _JobsInlineWhenQueueFull():
+		_apply(ctx, mapping, z, todo, obsolete)
+
+
+def _apply(ctx, mapping, z, todo, obsolete):
 	errors = []
 	for vid, dt, name in obsolete:      # newest first; all of them are before any Period Closing Voucher we post
 		try:
@@ -781,6 +813,11 @@ def remove_books(dry_run=1):
 	if dry_run:
 		print("DRY RUN - nothing changed. Run with --args '[0]' to remove them.")
 		return
+	with _JobsInlineWhenQueueFull():
+		_remove(pcvs, docs)
+
+
+def _remove(pcvs, docs):
 	for name in pcvs:     # first: a closed year refuses cancellations
 		legacy = frappe.db.get_single_value("Accounts Settings", "use_legacy_controller_for_pcv")
 		frappe.db.set_single_value("Accounts Settings", "use_legacy_controller_for_pcv", 1)
