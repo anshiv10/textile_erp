@@ -152,17 +152,27 @@ def _group(ctx, names, root_type):
 	return g
 
 
-def _usable(acc, a):
-	return (not acc.is_group and not acc.disabled and acc.root_type == a["root_type"]
+def _placement(ctx, a):
+	"""(parent group, root type) for a new ledger. Charts without an Equity root (ERPNext's Indian chart)
+	keep capital under Source of Funds (Liabilities) > Capital Account, so capital goes there."""
+	root_type = a["root_type"]
+	if root_type == "Equity" and not frappe.db.exists("Account", {"company": ctx.name, "is_group": 1, "root_type": "Equity"}):
+		return _group(ctx, ["Capital Account", "Shareholders Funds"], "Liability"), "Liability"
+	return _group(ctx, a.get("parents") or (EQUITY_PARENTS if root_type == "Equity" else []), root_type), root_type
+
+
+def _usable(acc, a, root_type):
+	return (not acc.is_group and not acc.disabled and acc.root_type == root_type
 		and (acc.account_type or None) == (a.get("account_type") or None))
 
 
 def _account(ctx, a, apply, stats):
 	"""The ERPNext account for an iFAS ledger: same name if free (or ours from an earlier run), else 'name (iFAS)'."""
+	parent, root_type = _placement(ctx, a)   # also in a dry run, so a chart problem shows before importing
 	for name in (a["erp_name"], a["erp_name"] + SUFFIX):
 		acc = frappe.db.get_value("Account", {"company": ctx.name, "account_name": name},
 			["name", "is_group", "disabled", "root_type", "account_type"], as_dict=True)
-		if acc and _usable(acc, a):
+		if acc and _usable(acc, a, root_type):
 			stats["reused"] += 1
 			return acc.name
 		if acc:
@@ -170,9 +180,8 @@ def _account(ctx, a, apply, stats):
 		stats["new"] += 1
 		if not apply:
 			return f"{name} - {ctx.abbr}"
-		parents = a.get("parents") or (EQUITY_PARENTS if a["root_type"] == "Equity" else [])
 		doc = frappe.get_doc({"doctype": "Account", "account_name": name, "company": ctx.name, "is_group": 0,
-			"parent_account": _group(ctx, parents, a["root_type"]), "account_type": a.get("account_type") or "",
+			"parent_account": parent, "account_type": a.get("account_type") or "",
 			"account_currency": ctx.default_currency})
 		doc.flags.ignore_permissions = True
 		doc.insert()
@@ -182,10 +191,13 @@ def _account(ctx, a, apply, stats):
 
 def _temporary_opening(ctx, apply):
 	acc = frappe.db.get_value("Account", {"company": ctx.name, "account_name": TEMP_OPENING, "is_group": 0}, "name")
-	if acc or not apply:
-		return acc or f"{TEMP_OPENING} - {ctx.abbr}"
+	if acc:
+		return acc
+	parent = _group(ctx, ["Temporary Accounts"], "Asset")
+	if not apply:
+		return f"{TEMP_OPENING} - {ctx.abbr}"
 	doc = frappe.get_doc({"doctype": "Account", "account_name": TEMP_OPENING, "company": ctx.name, "is_group": 0,
-		"parent_account": _group(ctx, ["Temporary Accounts"], "Asset"), "account_type": "Temporary",
+		"parent_account": parent, "account_type": "Temporary",
 		"account_currency": ctx.default_currency})
 	doc.flags.ignore_permissions = True
 	doc.insert()
