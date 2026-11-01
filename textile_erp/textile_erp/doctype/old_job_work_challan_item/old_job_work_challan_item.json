@@ -1,0 +1,120 @@
+{
+ "actions": [],
+ "creation": "2026-11-01 18:30:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "istable": 1,
+ "field_order": [
+  "item_code",
+  "item_name",
+  "hsn",
+  "pcs",
+  "qty",
+  "uom",
+  "issue_challan",
+  "issue_item",
+  "grey_used",
+  "shortage_qty",
+  "shortage_pct",
+  "pieces"
+ ],
+ "fields": [
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "label": "Item",
+   "options": "Item",
+   "read_only": 1
+  },
+  {
+   "fieldname": "item_name",
+   "fieldtype": "Data",
+   "label": "Item / Quality",
+   "in_list_view": 1,
+   "read_only": 1,
+   "columns": 3
+  },
+  {
+   "fieldname": "hsn",
+   "fieldtype": "Data",
+   "label": "HSN",
+   "read_only": 1
+  },
+  {
+   "fieldname": "pcs",
+   "fieldtype": "Float",
+   "label": "Pcs",
+   "in_list_view": 1,
+   "read_only": 1,
+   "columns": 1
+  },
+  {
+   "fieldname": "qty",
+   "fieldtype": "Float",
+   "label": "Qty",
+   "in_list_view": 1,
+   "read_only": 1,
+   "columns": 1
+  },
+  {
+   "fieldname": "uom",
+   "fieldtype": "Data",
+   "label": "Unit",
+   "in_list_view": 1,
+   "read_only": 1,
+   "columns": 1
+  },
+  {
+   "fieldname": "issue_challan",
+   "fieldtype": "Data",
+   "label": "Issue Challan",
+   "in_list_view": 1,
+   "read_only": 1,
+   "columns": 1
+  },
+  {
+   "fieldname": "issue_item",
+   "fieldtype": "Data",
+   "label": "Issued Item (consumed)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "grey_used",
+   "fieldtype": "Float",
+   "label": "Issued Qty Used",
+   "in_list_view": 1,
+   "read_only": 1,
+   "columns": 1
+  },
+  {
+   "fieldname": "shortage_qty",
+   "fieldtype": "Float",
+   "label": "Shortage Qty",
+   "in_list_view": 1,
+   "read_only": 1,
+   "columns": 1
+  },
+  {
+   "fieldname": "shortage_pct",
+   "fieldtype": "Percent",
+   "label": "Shortage %",
+   "read_only": 1
+  },
+  {
+   "fieldname": "pieces",
+   "fieldtype": "Small Text",
+   "label": "Piece-wise Qty",
+   "read_only": 1
+  }
+ ],
+ "modified": "2026-11-01 18:30:00.000000",
+ "modified_by": "Administrator",
+ "module": "Textile ERP",
+ "name": "Old Job Work Challan Item",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

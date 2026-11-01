@@ -748,6 +748,7 @@ def import_books(dry_run=1, file_url=None, company=None):
 		_ensure_field()
 	print(f"1. Fiscal years to create: {', '.join(_ensure_fiscal_years(ctx, apply)) or 'none (all exist)'}")
 	mapping, acc, party = _resolve(books, ctx, apply)
+	ctx.job_work = books.get("job_work") or []
 	print(f"2. Accounts: {acc['new']} new, {acc['reused']} already there")
 	print(f"3. Customers + suppliers: {party['new']} new, {party['reused']} already there")
 	print(f"4. Items from the iFAS bills: {_ensure_items(ctx, books, apply)} new, {len(books.get('items') or [])} in all")
@@ -772,6 +773,7 @@ def import_books(dry_run=1, file_url=None, company=None):
 	if dry_run:
 		n, _ = _attach(z, False)
 		print(f"6. Original files to store under Home / {FOLDER}: {n}")
+		_job_work(ctx, mapping, False)
 		print("DRY RUN - nothing changed. Run with --args '[0]' to import.")
 		return
 
@@ -838,8 +840,62 @@ def _apply(ctx, mapping, z, todo, obsolete, reopen=None):
 	done, skipped = _attach(z, True)
 	print(f"6. Original files stored under Home / {FOLDER}: {done} new, {skipped} already there")
 	frappe.db.commit()
+	jw_errors = _job_work(ctx, mapping, True)
 	print("-" * 78)
-	print(f"RESULT: {len(todo) - len(errors)} entries posted, {len(errors)} errors. Next: reconcile_books")
+	print(f"RESULT: {len(todo) - len(errors)} entries posted, {len(errors) + len(jw_errors)} errors. Next: reconcile_books")
+
+
+JW = "Old Job Work Challan"
+
+
+def _job_work(ctx, mapping, apply):
+	"""iFAS job work issue / receipt challans -> Old Job Work Challan (history only: no stock, no ledger)."""
+	if not ctx.get("job_work"):
+		return []
+	if not frappe.db.exists("DocType", JW):
+		print(f"7. Job work challans: {len(ctx.job_work)} in the books - run 'bench migrate' first ({JW} is missing)")
+		return [("job work", "doctype missing")] if apply else []
+	have = set(frappe.get_all(JW, filters={"ifas_key": ["is", "set"]}, pluck="ifas_key"))
+	todo = [c for c in ctx.job_work if c["id"] not in have]
+	kinds = {}
+	for c in todo:
+		kinds[c["kind"]] = kinds.get(c["kind"], 0) + 1
+	what = ", ".join(f"{n} {k}" for k, n in sorted(kinds.items())) or "none"
+	if not apply:
+		print(f"7. Job work challans (issue / receipt, history only): {len(todo)} new ({what}), {len(have)} already there")
+		return []
+	items, errors = {}, []
+
+	def item(name):
+		if name not in items:
+			items[name] = next((c for c in (name, f"{name[:132]} (iFAS)") if name and frappe.db.exists("Item", c)), None)
+		return items[name]
+
+	for c in todo:
+		try:
+			doc = frappe.new_doc(JW)
+			_account, party_type, party = mapping[c["party"]][:3] if c.get("party") else (None, None, None)
+			doc.update({"challan_type": c["kind"], "challan_no": c["challan"], "challan_date": c["date"],
+				"fiscal_year": PERIOD_NAMES.get(c["fy"], c["fy"]).replace("FY ", ""), "party_type": party_type, "party": party,
+				"party_name": c["party_name"], "challan_book": c["book"], "lot_no": c["lot"], "purchase_bill_no": c["bill"],
+				"weaver": c["weaver"], "total_pcs": c["pcs"], "total_qty": c["qty"], "uom": c["uom"], "amount": c["amount"],
+				"job_bill": _doc_name(ctx, PI, c["voucher"]) if c.get("voucher") else None,
+				"issue_challans": c.get("issue_challans", ""), "remarks": (c["remarks"] or "")[:1000], "note": c["note"],
+				"source_file": c["source"], "ifas_key": c["id"]})
+			for ln in c["lines"]:
+				doc.append("items", {"item_code": item(ln["item"]), "item_name": ln["item"][:140], "hsn": ln.get("hsn", ""),
+					"pcs": ln.get("pcs", 0), "qty": ln["qty"], "uom": ln["uom"], "issue_challan": ln.get("issue_challan", ""),
+					"issue_item": ln.get("issue_item", ""), "grey_used": ln.get("grey_used", 0),
+					"shortage_qty": ln.get("shortage", 0), "shortage_pct": ln.get("shortage_pct", 0), "pieces": ln.get("pieces", "")})
+			doc.flags.ignore_permissions = True
+			doc.insert(set_name=c["name"], ignore_mandatory=True)
+			frappe.db.commit()
+		except Exception as ex:
+			frappe.db.rollback()
+			errors.append((c["id"], str(ex)[:200]))
+			print(f"  ERROR job work challan {c['name']}: {str(ex)[:200]}")
+	print(f"7. Job work challans (issue / receipt, history only): {len(todo) - len(errors)} new ({what}), {len(have)} already there")
+	return errors
 
 
 def _kinds(rows):
@@ -978,7 +1034,13 @@ def reconcile_books(file_url=None, company=None):
 		print(f"Profit {PERIOD_NAMES[fy]}: ERPNext {profit(fy):,.2f} | {src} {want_p:,.2f} | {'MATCH' if ok else 'DIFFERENT'}")
 	print(f"Profit FY 2024-25 before closing stock 31-03-2025 (CA to give it): {profit('2425'):,.2f}")
 	print(f"{TEMP_OPENING} balance after import: {temp:,.2f} {'(correct, must be 0)' if not temp else '(must be 0!)'}")
-	total = len(diffs) + close_diff + len(missing) + len(stale) + (1 if temp else 0) + bad_profit
+	jw_missing = 0
+	if books.get("job_work"):
+		have = set(frappe.get_all(JW, filters={"ifas_key": ["is", "set"]}, pluck="ifas_key")) if frappe.db.exists("DocType", JW) else set()
+		jw_missing = sum(1 for c in books["job_work"] if c["id"] not in have)
+		print(f"Job work challans (issue / receipt): {len(books['job_work']) - jw_missing} of {len(books['job_work'])} in ERPNext"
+			+ ("" if not jw_missing else "   MISSING - run import_books --args '[0]'"))
+	total = len(diffs) + close_diff + len(missing) + len(stale) + (1 if temp else 0) + bad_profit + jw_missing
 	print("-" * 78)
 	print(f"RESULT: {total} differences" + ("  - the ERPNext books equal iFAS" if not total else ""))
 	return total
@@ -997,12 +1059,16 @@ def remove_books(dry_run=1):
 				fields=["name", "posting_date", "creation"])]
 	docs.sort(reverse=True)     # payments first (they are linked to bills), then newest first
 	docs = [d[1:] for d in docs]
-	print(f"iFAS entries: {len(docs)}  |  iFAS year closings: {len(pcvs)}")
+	jw = frappe.get_all(JW, filters={"ifas_key": ["is", "set"]}, pluck="name") if frappe.db.exists("DocType", JW) else []
+	print(f"iFAS entries: {len(docs)}  |  iFAS year closings: {len(pcvs)}  |  job work challans: {len(jw)}")
 	if dry_run:
 		print("DRY RUN - nothing changed. Run with --args '[0]' to remove them.")
 		return
 	with _JobsInlineWhenQueueFull():
 		_remove(pcvs, docs)
+		for name in jw:
+			frappe.delete_doc(JW, name, force=1, ignore_permissions=True)
+		frappe.db.commit()
 
 
 def _remove(pcvs, docs):

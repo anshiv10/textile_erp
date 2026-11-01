@@ -1,0 +1,320 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-11-01 18:30:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "description": "Job work issue and receipt challans from the old iFAS books (FY 2022-23 to 2024-25). History only: no stock or accounting effect.",
+ "field_order": [
+  "challan_type",
+  "challan_no",
+  "challan_date",
+  "fiscal_year",
+  "column_break_a",
+  "party_type",
+  "party",
+  "party_name",
+  "challan_book",
+  "details_section",
+  "lot_no",
+  "purchase_bill_no",
+  "weaver",
+  "column_break_b",
+  "total_pcs",
+  "total_qty",
+  "uom",
+  "amount",
+  "items_section",
+  "items",
+  "links_section",
+  "job_bill",
+  "issue_challans",
+  "column_break_c",
+  "remarks",
+  "note",
+  "source_file",
+  "ifas_key"
+ ],
+ "fields": [
+  {
+   "fieldname": "challan_type",
+   "fieldtype": "Select",
+   "label": "Issue / Receipt",
+   "options": "Issue\nReceipt",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "read_only": 1,
+   "columns": 1
+  },
+  {
+   "fieldname": "challan_no",
+   "fieldtype": "Data",
+   "label": "Challan / Bill No.",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "read_only": 1,
+   "columns": 1
+  },
+  {
+   "fieldname": "challan_date",
+   "fieldtype": "Date",
+   "label": "Date",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "read_only": 1,
+   "columns": 1
+  },
+  {
+   "fieldname": "fiscal_year",
+   "fieldtype": "Data",
+   "label": "Fiscal Year",
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_a",
+   "fieldtype": "Column Break",
+   "label": ""
+  },
+  {
+   "fieldname": "party_type",
+   "fieldtype": "Select",
+   "label": "Party Type",
+   "options": "\nSupplier\nCustomer",
+   "read_only": 1
+  },
+  {
+   "fieldname": "party",
+   "fieldtype": "Dynamic Link",
+   "label": "Job Worker",
+   "options": "party_type",
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "party_name",
+   "fieldtype": "Data",
+   "label": "Job Worker Name",
+   "in_list_view": 1,
+   "read_only": 1,
+   "bold": 1,
+   "columns": 3
+  },
+  {
+   "fieldname": "challan_book",
+   "fieldtype": "Data",
+   "label": "iFAS Book",
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "details_section",
+   "fieldtype": "Section Break",
+   "label": "Challan details"
+  },
+  {
+   "fieldname": "lot_no",
+   "fieldtype": "Data",
+   "label": "Lot No.",
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "purchase_bill_no",
+   "fieldtype": "Data",
+   "label": "P. Bill No. (purchase bill of the goods sent)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "weaver",
+   "fieldtype": "Data",
+   "label": "Weaver",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_b",
+   "fieldtype": "Column Break",
+   "label": ""
+  },
+  {
+   "fieldname": "total_pcs",
+   "fieldtype": "Float",
+   "label": "Total Pcs",
+   "in_list_view": 1,
+   "read_only": 1,
+   "columns": 1
+  },
+  {
+   "fieldname": "total_qty",
+   "fieldtype": "Float",
+   "label": "Total Qty",
+   "in_list_view": 1,
+   "read_only": 1,
+   "columns": 1
+  },
+  {
+   "fieldname": "uom",
+   "fieldtype": "Data",
+   "label": "Unit",
+   "read_only": 1
+  },
+  {
+   "fieldname": "amount",
+   "fieldtype": "Currency",
+   "label": "Amount (as on the challan)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "items_section",
+   "fieldtype": "Section Break",
+   "label": "Items"
+  },
+  {
+   "fieldname": "items",
+   "fieldtype": "Table",
+   "label": "Items",
+   "options": "Old Job Work Challan Item",
+   "read_only": 1
+  },
+  {
+   "fieldname": "links_section",
+   "fieldtype": "Section Break",
+   "label": "Links"
+  },
+  {
+   "fieldname": "job_bill",
+   "fieldtype": "Link",
+   "label": "Job / Mill Bill (Purchase Invoice)",
+   "options": "Purchase Invoice",
+   "read_only": 1
+  },
+  {
+   "fieldname": "issue_challans",
+   "fieldtype": "Data",
+   "label": "Against Issue Challan(s)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_c",
+   "fieldtype": "Column Break",
+   "label": ""
+  },
+  {
+   "fieldname": "remarks",
+   "fieldtype": "Small Text",
+   "label": "Remarks",
+   "read_only": 1
+  },
+  {
+   "fieldname": "note",
+   "fieldtype": "Small Text",
+   "label": "Note",
+   "read_only": 1
+  },
+  {
+   "fieldname": "source_file",
+   "fieldtype": "Data",
+   "label": "Source (iFAS file)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "ifas_key",
+   "fieldtype": "Data",
+   "label": "iFAS Key",
+   "unique": 1,
+   "hidden": 1,
+   "read_only": 1
+  }
+ ],
+ "in_create": 1,
+ "modified": "2026-11-01 18:30:00.000000",
+ "modified_by": "Administrator",
+ "module": "Textile ERP",
+ "name": "Old Job Work Challan",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1,
+   "email": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1
+  },
+  {
+   "role": "Stock Manager",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1,
+   "email": 1
+  },
+  {
+   "role": "Stock User",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1,
+   "email": 1
+  },
+  {
+   "role": "Manufacturing Manager",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1,
+   "email": 1
+  },
+  {
+   "role": "Manufacturing User",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1,
+   "email": 1
+  },
+  {
+   "role": "Accounts Manager",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1,
+   "email": 1
+  },
+  {
+   "role": "Accounts User",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1,
+   "email": 1
+  },
+  {
+   "role": "Purchase Manager",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1,
+   "email": 1
+  },
+  {
+   "role": "Purchase User",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1,
+   "email": 1
+  }
+ ],
+ "search_fields": "party_name,challan_no,lot_no",
+ "show_title_field_in_link": 1,
+ "title_field": "party_name",
+ "sort_field": "challan_date",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}
