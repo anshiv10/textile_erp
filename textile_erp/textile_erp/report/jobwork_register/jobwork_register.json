@@ -1,7 +1,7 @@
 {
  "add_total_row": 1,
  "columns": [],
- "creation": "2026-11-01 18:30:00.000000",
+ "creation": "2026-11-01 23:50:00.000000",
  "disabled": 0,
  "docstatus": 0,
  "doctype": "Report",
@@ -9,14 +9,14 @@
  "idx": 0,
  "is_standard": "Yes",
  "letterhead": null,
- "modified": "2026-11-01 18:30:00.000000",
+ "modified": "2026-11-01 23:50:00.000000",
  "modified_by": "Administrator",
  "module": "Textile ERP",
- "name": "Old Job Work Register",
+ "name": "Jobwork Register",
  "owner": "Administrator",
  "prepared_report": 0,
- "ref_doctype": "Old Job Work Challan",
- "report_name": "Old Job Work Register",
+ "ref_doctype": "Stock Entry",
+ "report_name": "Jobwork Register",
  "report_type": "Script Report",
  "roles": [
   {

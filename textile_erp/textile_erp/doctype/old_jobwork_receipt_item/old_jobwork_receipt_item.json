@@ -1,0 +1,105 @@
+{
+ "actions": [],
+ "creation": "2026-11-01 22:15:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "istable": 1,
+ "field_order": [
+  "item_code",
+  "item_name",
+  "qty",
+  "uom",
+  "issue",
+  "issue_challan",
+  "issue_item",
+  "grey_used",
+  "shortage_qty",
+  "shortage_pct"
+ ],
+ "fields": [
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "label": "Item",
+   "options": "Item",
+   "read_only": 1
+  },
+  {
+   "fieldname": "item_name",
+   "fieldtype": "Data",
+   "label": "Item Received",
+   "in_list_view": 1,
+   "columns": 3,
+   "read_only": 1
+  },
+  {
+   "fieldname": "qty",
+   "fieldtype": "Float",
+   "label": "Qty Received",
+   "in_list_view": 1,
+   "columns": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "uom",
+   "fieldtype": "Data",
+   "label": "Unit",
+   "read_only": 1
+  },
+  {
+   "fieldname": "issue",
+   "fieldtype": "Link",
+   "label": "Jobwork Issue",
+   "options": "Old Jobwork Issue",
+   "in_list_view": 1,
+   "columns": 2,
+   "read_only": 1
+  },
+  {
+   "fieldname": "issue_challan",
+   "fieldtype": "Data",
+   "label": "Issue Challan No.",
+   "read_only": 1
+  },
+  {
+   "fieldname": "issue_item",
+   "fieldtype": "Data",
+   "label": "Issued Item Used",
+   "in_list_view": 1,
+   "columns": 2,
+   "read_only": 1
+  },
+  {
+   "fieldname": "grey_used",
+   "fieldtype": "Float",
+   "label": "Issued Qty Used",
+   "in_list_view": 1,
+   "columns": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "shortage_qty",
+   "fieldtype": "Float",
+   "label": "Shortage Qty",
+   "in_list_view": 1,
+   "columns": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "shortage_pct",
+   "fieldtype": "Percent",
+   "label": "Shortage %",
+   "read_only": 1
+  }
+ ],
+ "modified": "2026-11-01 22:15:00.000000",
+ "modified_by": "Administrator",
+ "module": "Textile ERP",
+ "name": "Old Jobwork Receipt Item",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

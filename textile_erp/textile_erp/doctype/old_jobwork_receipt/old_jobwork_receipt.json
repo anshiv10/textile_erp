@@ -2,74 +2,69 @@
  "actions": [],
  "allow_rename": 0,
  "autoname": "hash",
- "creation": "2026-11-01 18:30:00.000000",
+ "creation": "2026-11-01 22:15:00.000000",
  "doctype": "DocType",
  "engine": "InnoDB",
- "description": "Job work issue and receipt challans from the old iFAS books (FY 2022-23 to 2024-25). History only: no stock or accounting effect.",
+ "description": "Jobwork receipts (mill receive / job receipt) from the old iFAS books, FY 2022-23 to 2024-25. History only: no stock or accounting effect.",
  "field_order": [
-  "challan_type",
   "challan_no",
   "challan_date",
   "fiscal_year",
+  "challan_book",
   "column_break_a",
   "party_type",
   "party",
   "party_name",
-  "challan_book",
   "details_section",
-  "lot_no",
-  "purchase_bill_no",
-  "weaver",
-  "column_break_b",
   "total_pcs",
   "total_qty",
   "uom",
+  "column_break_b",
   "amount",
-  "items_section",
-  "items",
-  "links_section",
   "job_bill",
   "issue_challans",
-  "column_break_c",
+  "items_section",
+  "items",
+  "info_section",
   "remarks",
+  "column_break_z",
   "note",
   "source_file",
   "ifas_key"
  ],
  "fields": [
   {
-   "fieldname": "challan_type",
-   "fieldtype": "Select",
-   "label": "Issue / Receipt",
-   "options": "Issue\nReceipt",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "read_only": 1,
-   "columns": 1
-  },
-  {
    "fieldname": "challan_no",
    "fieldtype": "Data",
-   "label": "Challan / Bill No.",
+   "label": "Receipt / Bill No.",
    "in_list_view": 1,
    "in_standard_filter": 1,
-   "read_only": 1,
-   "columns": 1
+   "columns": 1,
+   "read_only": 1
   },
   {
    "fieldname": "challan_date",
    "fieldtype": "Date",
-   "label": "Date",
+   "label": "Receipt Date",
    "in_list_view": 1,
    "in_standard_filter": 1,
-   "read_only": 1,
-   "columns": 1
+   "columns": 1,
+   "read_only": 1
   },
   {
    "fieldname": "fiscal_year",
    "fieldtype": "Data",
    "label": "Fiscal Year",
    "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "challan_book",
+   "fieldtype": "Data",
+   "label": "iFAS Voucher Type",
+   "in_standard_filter": 1,
+   "in_list_view": 1,
+   "columns": 2,
    "read_only": 1
   },
   {
@@ -97,61 +92,30 @@
    "fieldtype": "Data",
    "label": "Job Worker Name",
    "in_list_view": 1,
-   "read_only": 1,
    "bold": 1,
-   "columns": 3
-  },
-  {
-   "fieldname": "challan_book",
-   "fieldtype": "Data",
-   "label": "iFAS Book",
-   "in_standard_filter": 1,
+   "columns": 3,
    "read_only": 1
   },
   {
    "fieldname": "details_section",
    "fieldtype": "Section Break",
-   "label": "Challan details"
-  },
-  {
-   "fieldname": "lot_no",
-   "fieldtype": "Data",
-   "label": "Lot No.",
-   "in_standard_filter": 1,
-   "read_only": 1
-  },
-  {
-   "fieldname": "purchase_bill_no",
-   "fieldtype": "Data",
-   "label": "P. Bill No. (purchase bill of the goods sent)",
-   "read_only": 1
-  },
-  {
-   "fieldname": "weaver",
-   "fieldtype": "Data",
-   "label": "Weaver",
-   "read_only": 1
-  },
-  {
-   "fieldname": "column_break_b",
-   "fieldtype": "Column Break",
-   "label": ""
+   "label": "Receipt details"
   },
   {
    "fieldname": "total_pcs",
    "fieldtype": "Float",
-   "label": "Total Pcs",
+   "label": "Total Pcs Received",
    "in_list_view": 1,
-   "read_only": 1,
-   "columns": 1
+   "columns": 1,
+   "read_only": 1
   },
   {
    "fieldname": "total_qty",
    "fieldtype": "Float",
-   "label": "Total Qty",
+   "label": "Total Qty Received",
    "in_list_view": 1,
-   "read_only": 1,
-   "columns": 1
+   "columns": 1,
+   "read_only": 1
   },
   {
    "fieldname": "uom",
@@ -160,27 +124,15 @@
    "read_only": 1
   },
   {
+   "fieldname": "column_break_b",
+   "fieldtype": "Column Break",
+   "label": ""
+  },
+  {
    "fieldname": "amount",
    "fieldtype": "Currency",
-   "label": "Amount (as on the challan)",
+   "label": "Bill Amount",
    "read_only": 1
-  },
-  {
-   "fieldname": "items_section",
-   "fieldtype": "Section Break",
-   "label": "Items"
-  },
-  {
-   "fieldname": "items",
-   "fieldtype": "Table",
-   "label": "Items",
-   "options": "Old Job Work Challan Item",
-   "read_only": 1
-  },
-  {
-   "fieldname": "links_section",
-   "fieldtype": "Section Break",
-   "label": "Links"
   },
   {
    "fieldname": "job_bill",
@@ -196,15 +148,32 @@
    "read_only": 1
   },
   {
-   "fieldname": "column_break_c",
-   "fieldtype": "Column Break",
-   "label": ""
+   "fieldname": "items_section",
+   "fieldtype": "Section Break",
+   "label": "Items received"
+  },
+  {
+   "fieldname": "items",
+   "fieldtype": "Table",
+   "label": "Items",
+   "options": "Old Jobwork Receipt Item",
+   "read_only": 1
+  },
+  {
+   "fieldname": "info_section",
+   "fieldtype": "Section Break",
+   "label": "More"
   },
   {
    "fieldname": "remarks",
    "fieldtype": "Small Text",
    "label": "Remarks",
    "read_only": 1
+  },
+  {
+   "fieldname": "column_break_z",
+   "fieldtype": "Column Break",
+   "label": ""
   },
   {
    "fieldname": "note",
@@ -228,10 +197,10 @@
   }
  ],
  "in_create": 1,
- "modified": "2026-11-01 18:30:00.000000",
+ "modified": "2026-11-01 22:15:00.000000",
  "modified_by": "Administrator",
  "module": "Textile ERP",
- "name": "Old Job Work Challan",
+ "name": "Old Jobwork Receipt",
  "owner": "Administrator",
  "permissions": [
   {
@@ -310,7 +279,7 @@
    "email": 1
   }
  ],
- "search_fields": "party_name,challan_no,lot_no",
+ "search_fields": "party_name,challan_no",
  "show_title_field_in_link": 1,
  "title_field": "party_name",
  "sort_field": "challan_date",

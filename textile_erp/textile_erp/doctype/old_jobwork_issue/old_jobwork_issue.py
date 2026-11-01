@@ -1,5 +1,5 @@
 from frappe.model.document import Document
 
 
-class OldJobWorkChallanItem(Document):
+class OldJobworkIssue(Document):
 	pass

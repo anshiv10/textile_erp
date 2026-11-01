@@ -845,26 +845,66 @@ def _apply(ctx, mapping, z, todo, obsolete, reopen=None):
 	print(f"RESULT: {len(todo) - len(errors)} entries posted, {len(errors) + len(jw_errors)} errors. Next: reconcile_books")
 
 
-JW = "Old Job Work Challan"
+JWI, JWR = "Old Jobwork Issue", "Old Jobwork Receipt"
+JW_DT = {"Issue": JWI, "Receipt": JWR}
+JW_OLD = ("Old Job Work Challan", "Old Job Work Challan Item")     # first version: one list for both, replaced
+
+
+def _jw_have():
+	"""ifas_key -> doctype of the jobwork issues / receipts already in ERPNext."""
+	have = {}
+	for dt in JW_DT.values():
+		if frappe.db.exists("DocType", dt):
+			have.update({k: dt for k in frappe.get_all(dt, filters={"ifas_key": ["is", "set"]}, pluck="ifas_key")})
+	return have
+
+
+def _jw_drop_old(apply):
+	"""The first version kept issues and receipts in one list (Old Job Work Challan). It is removed: the same
+	challans come back as Old Jobwork Issue / Old Jobwork Receipt."""
+	if not frappe.db.exists("DocType", JW_OLD[0]):
+		return 0
+	n = frappe.db.count(JW_OLD[0])
+	if apply:
+		frappe.flags.in_patch = True     # a standard DocType may only be deleted from a patch / developer mode
+		try:
+			for dt in JW_OLD:
+				frappe.db.delete(dt)
+				frappe.delete_doc("DocType", dt, force=1, ignore_permissions=True, ignore_missing=True)
+			frappe.db.commit()
+		finally:
+			frappe.flags.in_patch = False
+	return n
 
 
 def _job_work(ctx, mapping, apply):
-	"""iFAS job work issue / receipt challans -> Old Job Work Challan (history only: no stock, no ledger)."""
+	"""iFAS jobwork issue challans (mill issue) -> Old Jobwork Issue, jobwork receipts (mill receive / job receipt)
+	-> Old Jobwork Receipt. History only: no stock, no ledger."""
 	if not ctx.get("job_work"):
 		return []
-	if not frappe.db.exists("DocType", JW):
-		print(f"7. Job work challans: {len(ctx.job_work)} in the books - run 'bench migrate' first ({JW} is missing)")
+	missing = [dt for dt in JW_DT.values() if not frappe.db.exists("DocType", dt)]
+	if missing:
+		print(f"7. Jobwork issue / receipt: {', '.join(missing)} missing - run 'bench migrate' first")
 		return [("job work", "doctype missing")] if apply else []
-	have = set(frappe.get_all(JW, filters={"ifas_key": ["is", "set"]}, pluck="ifas_key"))
-	todo = [c for c in ctx.job_work if c["id"] not in have]
-	kinds = {}
-	for c in todo:
-		kinds[c["kind"]] = kinds.get(c["kind"], 0) + 1
-	what = ", ".join(f"{n} {k}" for k, n in sorted(kinds.items())) or "none"
+	old = _jw_drop_old(apply)
+	have = _jw_have()
+	todo = [c for c in sorted(ctx.job_work, key=lambda c: c["kind"] != "Issue") if c["id"] not in have]   # issues first
+
+	def counts(rows, kind):
+		return sum(1 for c in rows if c["kind"] == kind)
+
+	def report(made):
+		for kind in ("Issue", "Receipt"):
+			print(f"{'7.' if kind == 'Issue' else '  '} Jobwork {kind}s (history only): {made(kind)} new, "
+				f"{sum(1 for dt in have.values() if dt == JW_DT[kind])} already there   -> list '{JW_DT[kind]}'")
+		if old:
+			print(f"   the earlier combined list 'Old Job Work Challan' ({old}) "
+				+ ("is removed - the same challans are in the two lists above" if apply else "will be removed - replaced by the two lists"))
+
 	if not apply:
-		print(f"7. Job work challans (issue / receipt, history only): {len(todo)} new ({what}), {len(have)} already there")
+		report(lambda kind: counts(todo, kind))
 		return []
-	items, errors = {}, []
+	items, errors, issue_names = {}, [], set(frappe.get_all(JWI, pluck="name"))
 
 	def item(name):
 		if name not in items:
@@ -873,28 +913,38 @@ def _job_work(ctx, mapping, apply):
 
 	for c in todo:
 		try:
-			doc = frappe.new_doc(JW)
+			dt = JW_DT[c["kind"]]
+			doc = frappe.new_doc(dt)
 			_account, party_type, party = mapping[c["party"]][:3] if c.get("party") else (None, None, None)
-			doc.update({"challan_type": c["kind"], "challan_no": c["challan"], "challan_date": c["date"],
+			doc.update({"challan_no": c["challan"], "challan_date": c["date"], "challan_book": c["book"],
 				"fiscal_year": PERIOD_NAMES.get(c["fy"], c["fy"]).replace("FY ", ""), "party_type": party_type, "party": party,
-				"party_name": c["party_name"], "challan_book": c["book"], "lot_no": c["lot"], "purchase_bill_no": c["bill"],
-				"weaver": c["weaver"], "total_pcs": c["pcs"], "total_qty": c["qty"], "uom": c["uom"], "amount": c["amount"],
-				"job_bill": _doc_name(ctx, PI, c["voucher"]) if c.get("voucher") else None,
-				"issue_challans": c.get("issue_challans", ""), "remarks": (c["remarks"] or "")[:1000], "note": c["note"],
-				"source_file": c["source"], "ifas_key": c["id"]})
-			for ln in c["lines"]:
-				doc.append("items", {"item_code": item(ln["item"]), "item_name": ln["item"][:140], "hsn": ln.get("hsn", ""),
-					"pcs": ln.get("pcs", 0), "qty": ln["qty"], "uom": ln["uom"], "issue_challan": ln.get("issue_challan", ""),
-					"issue_item": ln.get("issue_item", ""), "grey_used": ln.get("grey_used", 0),
-					"shortage_qty": ln.get("shortage", 0), "shortage_pct": ln.get("shortage_pct", 0), "pieces": ln.get("pieces", "")})
+				"party_name": c["party_name"], "total_pcs": c["pcs"], "total_qty": c["qty"], "uom": c["uom"], "amount": c["amount"],
+				"remarks": (c["remarks"] or "")[:1000], "note": c["note"], "source_file": c["source"], "ifas_key": c["id"]})
+			if dt == JWI:
+				doc.update({"lot_no": c["lot"], "purchase_bill_no": c["bill"], "weaver": c["weaver"]})
+				for ln in c["lines"]:
+					doc.append("items", {"item_code": item(ln["item"]), "item_name": ln["item"][:140], "hsn": ln.get("hsn", ""),
+						"pcs": ln.get("pcs", 0), "qty": ln["qty"], "uom": ln["uom"], "pieces": ln.get("pieces", "")})
+			else:
+				doc.update({"job_bill": _doc_name(ctx, PI, c["voucher"]) if c.get("voucher") else None,
+					"issue_challans": c.get("issue_challans", "")})
+				for ln in c["lines"]:
+					doc.append("items", {"item_code": item(ln["item"]), "item_name": ln["item"][:140], "qty": ln["qty"],
+						"uom": ln["uom"], "issue": ln.get("issue") if ln.get("issue") in issue_names else None,
+						"issue_challan": ln.get("issue_challan", ""), "issue_item": ln.get("issue_item", ""),
+						"grey_used": ln.get("grey_used", 0), "shortage_qty": ln.get("shortage", 0),
+						"shortage_pct": ln.get("shortage_pct", 0)})
 			doc.flags.ignore_permissions = True
 			doc.insert(set_name=c["name"], ignore_mandatory=True)
+			if dt == JWI:
+				issue_names.add(doc.name)
 			frappe.db.commit()
 		except Exception as ex:
 			frappe.db.rollback()
 			errors.append((c["id"], str(ex)[:200]))
-			print(f"  ERROR job work challan {c['name']}: {str(ex)[:200]}")
-	print(f"7. Job work challans (issue / receipt, history only): {len(todo) - len(errors)} new ({what}), {len(have)} already there")
+			print(f"  ERROR jobwork {c['kind'].lower()} {c['name']}: {str(ex)[:200]}")
+	failed = {e[0] for e in errors}
+	report(lambda kind: sum(1 for c in todo if c["kind"] == kind and c["id"] not in failed))
 	return errors
 
 
@@ -1036,10 +1086,13 @@ def reconcile_books(file_url=None, company=None):
 	print(f"{TEMP_OPENING} balance after import: {temp:,.2f} {'(correct, must be 0)' if not temp else '(must be 0!)'}")
 	jw_missing = 0
 	if books.get("job_work"):
-		have = set(frappe.get_all(JW, filters={"ifas_key": ["is", "set"]}, pluck="ifas_key")) if frappe.db.exists("DocType", JW) else set()
-		jw_missing = sum(1 for c in books["job_work"] if c["id"] not in have)
-		print(f"Job work challans (issue / receipt): {len(books['job_work']) - jw_missing} of {len(books['job_work'])} in ERPNext"
-			+ ("" if not jw_missing else "   MISSING - run import_books --args '[0]'"))
+		have = _jw_have()
+		for kind, dt in JW_DT.items():
+			want = [c for c in books["job_work"] if c["kind"] == kind]
+			miss = sum(1 for c in want if have.get(c["id"]) != dt)
+			jw_missing += miss
+			print(f"Jobwork {kind}s ({dt}): {len(want) - miss} of {len(want)} in ERPNext"
+				+ ("" if not miss else "   MISSING - run import_books --args '[0]'"))
 	total = len(diffs) + close_diff + len(missing) + len(stale) + (1 if temp else 0) + bad_profit + jw_missing
 	print("-" * 78)
 	print(f"RESULT: {total} differences" + ("  - the ERPNext books equal iFAS" if not total else ""))
@@ -1059,15 +1112,16 @@ def remove_books(dry_run=1):
 				fields=["name", "posting_date", "creation"])]
 	docs.sort(reverse=True)     # payments first (they are linked to bills), then newest first
 	docs = [d[1:] for d in docs]
-	jw = frappe.get_all(JW, filters={"ifas_key": ["is", "set"]}, pluck="name") if frappe.db.exists("DocType", JW) else []
-	print(f"iFAS entries: {len(docs)}  |  iFAS year closings: {len(pcvs)}  |  job work challans: {len(jw)}")
+	jw = [(dt, n) for dt in (JWR, JWI) if frappe.db.exists("DocType", dt)
+		for n in frappe.get_all(dt, filters={"ifas_key": ["is", "set"]}, pluck="name")]
+	print(f"iFAS entries: {len(docs)}  |  iFAS year closings: {len(pcvs)}  |  jobwork issues / receipts: {len(jw)}")
 	if dry_run:
 		print("DRY RUN - nothing changed. Run with --args '[0]' to remove them.")
 		return
 	with _JobsInlineWhenQueueFull():
 		_remove(pcvs, docs)
-		for name in jw:
-			frappe.delete_doc(JW, name, force=1, ignore_permissions=True)
+		for dt, name in jw:      # receipts first: their lines link to the issues
+			frappe.delete_doc(dt, name, force=1, ignore_permissions=True)
 		frappe.db.commit()
 
 
