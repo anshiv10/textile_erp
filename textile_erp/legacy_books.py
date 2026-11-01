@@ -58,6 +58,8 @@ CUSTOM_FIELD = {"fieldname": FIELD, "fieldtype": "Data", "label": "iFAS Voucher"
 	"read_only": 1, "no_copy": 1, "search_index": 1, "in_standard_filter": 1,
 	"description": "Voucher imported from the old accounting software (iFAS)"}
 SI_CUSTOM_FIELD = dict(CUSTOM_FIELD, insert_after="remarks", description="Bill imported from the old accounting software (iFAS)")
+PI_CUSTOM_FIELD = dict(SI_CUSTOM_FIELD)
+PE_CUSTOM_FIELD = dict(CUSTOM_FIELD, insert_after="remarks", description="Receipt / payment imported from the old accounting software (iFAS)")
 
 
 # ------------------------------------------------------------------------------------------ data
@@ -131,7 +133,8 @@ def _preflight(ctx):
 
 def _ensure_field():
 	from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
-	for dt, field in (("Journal Entry", CUSTOM_FIELD), ("Sales Invoice", SI_CUSTOM_FIELD)):
+	for dt, field in (("Journal Entry", CUSTOM_FIELD), ("Sales Invoice", SI_CUSTOM_FIELD), ("Purchase Invoice", PI_CUSTOM_FIELD),
+			("Payment Entry", PE_CUSTOM_FIELD)):
 		if not frappe.get_meta(dt).has_field(FIELD):
 			create_custom_fields({dt: [field]}, ignore_validate=True, update=True)
 			frappe.clear_cache(doctype=dt)
@@ -323,7 +326,13 @@ def _resolve(books, ctx, apply):
 
 
 # ------------------------------------------------------------------------------------------ entries
-JE, SI, PCV = "Journal Entry", "Sales Invoice", "Period Closing Voucher"
+JE, SI, PCV, PI, PE = "Journal Entry", "Sales Invoice", "Period Closing Voucher", "Purchase Invoice", "Payment Entry"
+DOC_TYPES = (JE, SI, PI, PE)
+FY_ORDER = {"2223": 0, "2324": 1, "2425": 2}
+
+
+def _fy_rank(date):
+	return next((i for i, (s, e) in enumerate(PERIODS.values()) if s <= str(date) <= e), 9)
 
 
 def _rows(v):
@@ -353,7 +362,7 @@ def _entries(books):
 	carry.append(("TEMP", max(-total, 0), max(total, 0)))
 	out.append({"id": CARRY_ID, "date": "2023-04-01", "doctype": JE, "vtype": "Journal Entry", "is_opening": "No", "ref": "",
 		"remark": "Balances iFAS carried on 01-04-2023 in profit & loss ledgers (not closed on 31-03-2023)", "rows": carry, "order": 0})
-	invoiced = {i["id"] for i in books.get("invoices") or []}
+	invoiced = {i["id"] for i in books.get("invoices") or []} | {d["id"] for d in books.get("documents") or []}
 	for v in books["vouchers"]:
 		rows = _rows(v)
 		if v["id"] in invoiced or len(rows) < 2:
@@ -364,17 +373,26 @@ def _entries(books):
 		out.append({"id": y["id"], "date": y["date"], "doctype": JE, "vtype": "Journal Entry", "is_opening": "No", "ref": "",
 			"remark": y["remark"], "rows": [(r["key"], r["debit"], r["credit"]) for r in y["rows"] if r["debit"] or r["credit"]], "order": 2})
 	for i in books.get("invoices") or []:
-		out.append(dict(i, doctype=SI, order=1))
+		out.append(dict(i, doctype=SI, order=1, invoice=True))
+	seq = {}
+	for d in books.get("documents") or []:
+		e = dict(d, order=1, invoice=d["doctype"] in (SI, PI))
+		if d["doctype"] == SI:   # credit notes: short fixed names (India Compliance allows 16 characters for GST documents)
+			seq[d["fy"]] = seq.get(d["fy"], 0) + 1
+			e["set_name"] = f"iFASCN{d['fy']}-{seq[d['fy']]:03d}"
+		out.append(e)
 	for p in books.get("pcv") or []:
 		out.append(dict(p, date=p["end"], doctype=PCV, order=9))   # after every entry of the year it closes
-	out.sort(key=lambda e: (e["date"], e["order"], e["id"]))
+	# year by year: the year's bills first (a payment can only be linked to a bill that exists), then everything
+	# else in date order, then the year closing
+	out.sort(key=lambda e: (_fy_rank(e["date"]), 0 if e.get("invoice") else 1 if e["doctype"] != PCV else 2, e["date"], e["order"], e["id"]))
 	return out
 
 
 def _posted(ctx=None):
 	"""iFAS id -> (doctype, name) of what is already submitted."""
 	done = {}
-	for dt in (JE, SI):
+	for dt in DOC_TYPES:
 		if frappe.get_meta(dt).has_field(FIELD):
 			for d in frappe.get_all(dt, filters={"docstatus": 1, FIELD: ["is", "set"]}, fields=["name", FIELD]):
 				done[d.get(FIELD)] = (dt, d.name)
@@ -389,8 +407,8 @@ def _obsolete(entries, posted):
 	"""Entries posted by an earlier version that the current books replace (the 31-03-2023 Opening Entry once
 	FY 2022-23 is in; a sales Journal Entry once its bill is a Sales Invoice)."""
 	ids = {(e["id"], e["doctype"]) for e in entries}
-	return sorted(((vid, dt, name) for vid, (dt, name) in posted.items() if dt == JE and (vid, JE) not in ids),
-		key=lambda x: x[0], reverse=True)
+	return sorted(((vid, dt, name) for vid, (dt, name) in posted.items() if dt in DOC_TYPES and (vid, dt) not in ids),
+		key=lambda x: (x[1] == PE, x[0]), reverse=True)   # payments first (they link to bills), newest first
 
 
 def _post_je(ctx, mapping, e, bank_accounts):
@@ -485,6 +503,97 @@ def _post_pcv(ctx, mapping, p):
 	return doc.name
 
 
+def _doc_name(ctx, dt, vid):
+	"""ERPNext name of a bill already posted from iFAS."""
+	cache = ctx.setdefault("posted_names", {})
+	if vid not in cache:
+		cache[vid] = frappe.db.get_value(dt, {FIELD: vid, "docstatus": 1}, "name")
+	return cache[vid]
+
+
+def _post_doc(ctx, mapping, d):
+	"""Purchase Invoice / Debit Note / Credit Note from one iFAS voucher. Item lines carry the purchase (or return)
+	ledger; every other ledger of the voucher is an Actual charge - so the document's ledger rows are the
+	voucher's rows. Paise between item amounts and the ledger go to that same ledger as one more row."""
+	dt, sales = d["doctype"], d["doctype"] == SI
+	doc = frappe.new_doc(dt)
+	common = {"company": ctx.name, "posting_date": d["date"], "set_posting_time": 1, "due_date": d["date"],
+		"currency": ctx.default_currency, "conversion_rate": 1, "ignore_pricing_rule": 1, "update_stock": 0,
+		"disable_rounded_total": 1, "is_return": d["is_return"], "remarks": d["remark"][:500], FIELD: d["id"]}
+	if sales:
+		common.update({"customer": mapping[d["party"]][2], "debit_to": ctx.default_receivable_account})
+	else:
+		common.update({"supplier": mapping[d["party"]][2], "credit_to": ctx.default_payable_account, "apply_tds": 0,
+			"bill_no": d["bill_no"][:140], "bill_date": d["date"]})
+	doc.update(common)
+	if d["is_return"] and doc.meta.has_field("update_outstanding_for_self"):
+		doc.update_outstanding_for_self = 1
+	acc_field = "income_account" if sales else "expense_account"
+	for line in d["lines"]:
+		code = ctx.item_codes[line["item"]]
+		info = [f"iFAS: {line['item']}"]
+		if line.get("bill_rate") and abs(line["bill_rate"] - line["rate"]) >= 0.005:
+			info.append(f"bill rate {line['bill_rate']:g}, net of discount {line['rate']:g}")
+		if line.get("pcs"):
+			info.append(f"Pcs {line['pcs']:g}")
+		doc.append("items", {"item_code": code, "item_name": code[:140], "description": " | ".join(info), "qty": line["qty"],
+			"rate": line["rate"], "uom": ctx.item_uom[code], "conversion_factor": 1, acc_field: mapping[line["account"]][0],
+			"cost_center": ctx.cost_center})
+
+	def charge(account, amount, label):
+		row = {"charge_type": "Actual", "account_head": account, "description": label, "cost_center": ctx.cost_center}
+		if sales:
+			row["tax_amount"] = amount
+		elif d["is_return"]:
+			row.update({"category": "Total", "add_deduct_tax": "Add", "tax_amount": amount})
+		else:
+			row.update({"category": "Total", "add_deduct_tax": "Add" if amount >= 0 else "Deduct", "tax_amount": abs(amount)})
+		doc.append("taxes", row)
+
+	for c in d["charges"]:
+		if c["amount"]:
+			charge(mapping[c["key"]][0], c["amount"], mapping[c["key"]][3]["name"])
+	doc.flags.ignore_permissions = True
+	doc.flags.legacy_import = True
+	doc.set_missing_values()
+	doc.calculate_taxes_and_totals()
+	for key, want in d["pl_amount"].items():
+		account = mapping[key][0]
+		got = sum(flt(r.amount, 2) for r in doc.get("items") if r.get(acc_field) == account)
+		if abs(flt(want - got, 2)) >= 0.01:
+			charge(account, flt(want - got, 2), "Rounding as per iFAS bill")
+	doc.insert(set_name=d.get("set_name"), ignore_mandatory=True)
+	if abs(flt(doc.grand_total, 2) - d["total"]) >= 0.01:
+		raise frappe.ValidationError(f"total {doc.grand_total} != iFAS {d['total']}")
+	doc.submit()
+	ctx.setdefault("posted_names", {})[d["id"]] = doc.name
+	return doc.name
+
+
+def _post_pe(ctx, mapping, d, bank_accounts):
+	"""Receipt / payment with a party, linked to the bills it settled."""
+	account, party_type, party = mapping[d["party"]][:3]
+	bank = mapping[d["bank"]][0]
+	receive = d["payment_type"] == "Receive"
+	pe = frappe.new_doc(PE)
+	pe.update({"company": ctx.name, "posting_date": d["date"], "payment_type": d["payment_type"], "party_type": party_type,
+		"party": party, "paid_from": account if receive else bank, "paid_to": bank if receive else account,
+		"paid_amount": d["amount"], "received_amount": d["amount"], "source_exchange_rate": 1, "target_exchange_rate": 1,
+		"reference_no": (d["ref"] or d["id"].split("|")[-1])[:140], "reference_date": d["date"],
+		"remarks": d["remark"][:500], FIELD: d["id"]})
+	for a in d["allocations"]:
+		name = _doc_name(ctx, a["doctype"], a["id"])
+		if not name:
+			raise frappe.ValidationError(f"bill {a['id']} is not posted")
+		pe.append("references", {"reference_doctype": a["doctype"], "reference_name": name, "allocated_amount": a["amount"]})
+	pe.flags.ignore_permissions = True
+	pe.insert(ignore_mandatory=True)
+	pe.submit()
+	if bank in bank_accounts:
+		frappe.db.set_value(PE, pe.name, "clearance_date", d["date"], update_modified=False)
+	return pe.name
+
+
 def _ensure_items(ctx, books, apply):
 	"""Items named exactly as on the iFAS bills (non-stock: no stock history is imported)."""
 	ctx.item_codes, ctx.item_uom, made = {}, {}, 0
@@ -494,7 +603,8 @@ def _ensure_items(ctx, books, apply):
 	has_hsn = frappe.get_meta("Item").has_field("gst_hsn_code")
 	for it in books["items"]:
 		code = re.sub(r"\s+", " ", re.sub(r"[<>\[\]]", "", it["item_code"])).strip()[:140]
-		uom = "Meter" if it["hsn"].startswith("5407") and frappe.db.exists("UOM", "Meter") else "Kg"
+		uom = ("Nos" if it["item_code"].endswith("(iFAS)") and frappe.db.exists("UOM", "Nos")
+			else "Meter" if it["hsn"].startswith("5407") and frappe.db.exists("UOM", "Meter") else "Kg")
 		ctx.item_codes[it["item_code"]] = code
 		existing = frappe.db.get_value("Item", code, "stock_uom")
 		ctx.item_uom[code] = existing or uom
@@ -505,7 +615,8 @@ def _ensure_items(ctx, books, apply):
 			continue
 		doc = frappe.new_doc("Item")
 		doc.update({"item_code": code, "item_name": code, "item_group": group, "stock_uom": uom, "is_stock_item": 0,
-			"include_item_in_manufacturing": 0, "description": f"{code} (item as on the iFAS bills)"})
+			"include_item_in_manufacturing": 0, "is_sales_item": 1 if it.get("sales", True) else 0, "is_purchase_item": 1,
+			"description": it.get("description") or f"{code} (item as on the iFAS bills)"})
 		if has_hsn and it["hsn"]:
 			if not frappe.db.exists("GST HSN Code", it["hsn"]):
 				frappe.get_doc({"doctype": "GST HSN Code", "hsn_code": it["hsn"], "description": code}).insert(ignore_permissions=True)
@@ -611,21 +722,21 @@ def import_books(dry_run=1, file_url=None, company=None):
 	entries, posted = _entries(books), _posted(ctx)
 	obsolete = _obsolete(entries, posted)
 	todo = [e for e in entries if e["id"] not in posted or posted[e["id"]][0] != e["doctype"]]
-	count = lambda rows, dt: sum(1 for e in rows if e["doctype"] == dt)
-	print(f"5. Entries: {len(entries)} in the books ({count(entries, SI)} Sales Invoices with items, {count(entries, JE)} Journal Entries"
-		f"{', 1 Period Closing Voucher' if count(entries, PCV) else ''}); {len(entries) - len(todo)} already posted, {len(todo)} to post")
+	print(f"5. Entries: {len(entries)} in the books ({_kinds(entries)}); {len(entries) - len(todo)} already posted, {len(todo)} to post")
 	if obsolete:
-		print(f"   replaced by this version (cancelled and deleted first): {len(obsolete)} Journal Entries "
-			f"({sum(1 for o in obsolete if o[0] == OPENING_ID)} Opening Entry 31-03-2023, "
-			f"{sum(1 for o in obsolete if o[0] != OPENING_ID)} sales entries that become Sales Invoices)")
+		print(f"   replaced by this version (cancelled and deleted first): {len(obsolete)} "
+			f"({_kinds([{'doctype': dt, 'id': v} for v, dt, _n in obsolete])}) - they come back as the documents above")
 	ids = {e["id"] for e in entries}
 	print(f"   (iFAS vouchers with no amount - job / process receipts that move only stock: "
 		f"{sum(1 for v in books['vouchers'] if v['id'] not in ids and len(_rows(v)) < 2)}, nothing to post)")
 	pcv = next((e for e in entries if e["doctype"] == PCV), None)
+	reopen = None
 	if pcv and pcv["id"] in posted and (any(e["date"] <= pcv["date"] for e in todo if e["doctype"] != PCV) or any(
 			str(frappe.db.get_value(dt, name, "posting_date")) <= pcv["date"] for _v, dt, name in obsolete)):
-		print(f"  STOP: entries up to {pcv['date']} are missing but the year is already closed. Run remove_books, then import again.")
-		return
+		reopen = posted[pcv["id"]][1]
+		todo.append(pcv)
+		todo.sort(key=lambda e: entries.index(e))
+		print(f"   FY 2022-23 changes too: its year closing ({reopen}) is undone first and posted again at the end of the year")
 	if dry_run:
 		n, _ = _attach(z, False)
 		print(f"6. Original files to store under Home / {FOLDER}: {n}")
@@ -633,11 +744,15 @@ def import_books(dry_run=1, file_url=None, company=None):
 		return
 
 	with _JobsInlineWhenQueueFull():
-		_apply(ctx, mapping, z, todo, obsolete)
+		_apply(ctx, mapping, z, todo, obsolete, reopen)
 
 
-def _apply(ctx, mapping, z, todo, obsolete):
+def _apply(ctx, mapping, z, todo, obsolete, reopen=None):
 	errors = []
+	if reopen:      # the year closing of 2022-23 has to make way for changes inside that year; it is posted again after them
+		_cancel_pcv(reopen)
+		frappe.db.commit()
+		print(f"   FY 2022-23 closing {reopen} undone - it is posted again after the year's entries")
 	for vid, dt, name in obsolete:      # newest first; all of them are before any Period Closing Voucher we post
 		try:
 			doc = frappe.get_doc(dt, name)
@@ -660,8 +775,12 @@ def _apply(ctx, mapping, z, todo, obsolete):
 					print(f"  {len(errors)} entries of the year failed - the year is not closed. Fix them and run again.")
 					break
 				_post_pcv(ctx, mapping, e)
-			elif e["doctype"] == SI:
+			elif e["doctype"] == SI and "lines" not in e:
 				_post_si(ctx, mapping, e)
+			elif e["doctype"] in (SI, PI):
+				_post_doc(ctx, mapping, e)
+			elif e["doctype"] == PE:
+				_post_pe(ctx, mapping, e, bank_accounts)
 			else:
 				_post_je(ctx, mapping, e, bank_accounts)
 			frappe.db.commit()
@@ -680,6 +799,31 @@ def _apply(ctx, mapping, z, todo, obsolete):
 	frappe.db.commit()
 	print("-" * 78)
 	print(f"RESULT: {len(todo) - len(errors)} entries posted, {len(errors)} errors. Next: reconcile_books")
+
+
+def _kinds(rows):
+	"""'875 Purchase Invoices, 850 Sales Invoices, ...' for a list of entries."""
+	c = {}
+	for e in rows:
+		label = {JE: "Journal Entries", PE: "Payment Entries", PCV: "Period Closing Voucher"}.get(e["doctype"])
+		if e["doctype"] == SI:
+			label = "Credit Notes" if e.get("is_return") else "Sales Invoices"
+		elif e["doctype"] == PI:
+			label = "Debit Notes" if e.get("is_return") else "Purchase Invoices"
+		c[label] = c.get(label, 0) + 1
+	return ", ".join(f"{n} {k}" for k, n in c.items())
+
+
+def _cancel_pcv(name):
+	legacy = frappe.db.get_single_value("Accounts Settings", "use_legacy_controller_for_pcv")
+	frappe.db.set_single_value("Accounts Settings", "use_legacy_controller_for_pcv", 1)
+	try:
+		doc = frappe.get_doc(PCV, name)
+		doc.flags.ignore_permissions = True
+		doc.cancel()
+		frappe.delete_doc(PCV, name, force=1, ignore_permissions=True)
+	finally:
+		frappe.db.set_single_value("Accounts Settings", "use_legacy_controller_for_pcv", legacy or 0)
 
 
 def _key_of(mapping, ctx):
@@ -714,7 +858,7 @@ def reconcile_books(file_url=None, company=None):
 
 	got = {}   # (key, period) -> net
 	unknown = 0
-	for g in frappe.get_all("GL Entry", filters={"company": ctx.name, "voucher_type": ["in", [JE, SI, PCV]], "is_cancelled": 0},
+	for g in frappe.get_all("GL Entry", filters={"company": ctx.name, "voucher_type": ["in", [*DOC_TYPES, PCV]], "is_cancelled": 0},
 		fields=["voucher_type", "voucher_no", "account", "party_type", "party", "posting_date", "debit", "credit"]):
 		vid = ours.get((g.voucher_type, g.voucher_no))
 		if not vid:
@@ -751,9 +895,11 @@ def reconcile_books(file_url=None, company=None):
 	print(f"RECONCILIATION  iFAS books vs ERPNext  ({ctx.name})")
 	print("=" * 78)
 	missing = [e["id"] for e in entries if e["id"] not in posted or posted[e["id"]][0] != e["doctype"]]
-	n_si = sum(1 for e in entries if e["doctype"] == SI)
-	print(f"Entries posted: {len(entries) - len(missing)} of {len(entries)} ({n_si} of them Sales Invoices with items)"
+	print(f"Entries posted: {len(entries) - len(missing)} of {len(entries)} ({_kinds(entries)})"
 		+ (f"   MISSING: {', '.join(missing[:10])}" if missing else ""))
+	pes = [e for e in entries if e["doctype"] == PE]
+	if pes:
+		print(f"Payment Entries linked bill-wise to their invoices: {sum(1 for e in pes if e.get('allocations'))} of {len(pes)}")
 	stale = _obsolete(entries, posted)
 	if stale:
 		print(f"  {len(stale)} entries of an earlier version are still posted - run import_books --args '[0]'")
@@ -804,11 +950,12 @@ def remove_books(dry_run=1):
 	pcvs = [d.name for d in frappe.get_all(PCV, filters={"docstatus": 1, "company": company}, fields=["name", "remarks"],
 		order_by="period_end_date desc") if "iFAS" in (d.remarks or "")]
 	docs = []
-	for dt in (SI, JE):
+	for dt in DOC_TYPES:
 		if frappe.get_meta(dt).has_field(FIELD):
-			docs += [(d.posting_date, d.creation, dt, d.name) for d in frappe.get_all(dt, filters={FIELD: ["is", "set"]},
+			docs += [(dt == PE, d.posting_date, d.creation, dt, d.name) for d in frappe.get_all(dt, filters={FIELD: ["is", "set"]},
 				fields=["name", "posting_date", "creation"])]
-	docs.sort(reverse=True)
+	docs.sort(reverse=True)     # payments first (they are linked to bills), then newest first
+	docs = [d[1:] for d in docs]
 	print(f"iFAS entries: {len(docs)}  |  iFAS year closings: {len(pcvs)}")
 	if dry_run:
 		print("DRY RUN - nothing changed. Run with --args '[0]' to remove them.")
@@ -819,15 +966,7 @@ def remove_books(dry_run=1):
 
 def _remove(pcvs, docs):
 	for name in pcvs:     # first: a closed year refuses cancellations
-		legacy = frappe.db.get_single_value("Accounts Settings", "use_legacy_controller_for_pcv")
-		frappe.db.set_single_value("Accounts Settings", "use_legacy_controller_for_pcv", 1)
-		try:
-			doc = frappe.get_doc(PCV, name)
-			doc.flags.ignore_permissions = True
-			doc.cancel()
-			frappe.delete_doc(PCV, name, force=1, ignore_permissions=True)
-		finally:
-			frappe.db.set_single_value("Accounts Settings", "use_legacy_controller_for_pcv", legacy or 0)
+		_cancel_pcv(name)
 		frappe.db.commit()
 	for i, (_d, _c, dt, name) in enumerate(docs, 1):
 		doc = frappe.get_doc(dt, name)

@@ -1,7 +1,7 @@
 import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
-from textile_erp.legacy_books import CUSTOM_FIELD as IFAS_VOUCHER_FIELD, SI_CUSTOM_FIELD as IFAS_BILL_FIELD
+from textile_erp.legacy_books import CUSTOM_FIELD as IFAS_VOUCHER_FIELD, SI_CUSTOM_FIELD as IFAS_BILL_FIELD, PI_CUSTOM_FIELD as IFAS_PI_FIELD, PE_CUSTOM_FIELD as IFAS_PE_FIELD
 
 
 def get_brokerage_fields():
@@ -36,7 +36,8 @@ def get_roll_fields():
 CUSTOM_FIELDS = {
 	"Journal Entry": [IFAS_VOUCHER_FIELD],
 	"Sales Invoice": [*get_brokerage_fields(), IFAS_BILL_FIELD],
-	"Purchase Invoice": get_brokerage_fields(),
+	"Purchase Invoice": [*get_brokerage_fields(), IFAS_PI_FIELD],
+	"Payment Entry": [IFAS_PE_FIELD],
 	"Sales Order Item": get_roll_fields(),
 	"Delivery Note Item": get_roll_fields(),
 	"Sales Invoice Item": get_roll_fields(),

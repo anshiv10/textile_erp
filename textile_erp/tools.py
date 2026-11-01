@@ -20,7 +20,7 @@ def _old_books():
 	"""Journal Entries / Sales Invoices imported from iFAS (textile_erp.legacy_books) - real history, never
 	test data. Remove them only with textile_erp.legacy_books.remove_books."""
 	names = set()
-	for dt in ("Journal Entry", "Sales Invoice"):
+	for dt in ("Journal Entry", "Sales Invoice", "Purchase Invoice", "Payment Entry"):
 		if frappe.get_meta(dt).has_field("ifas_voucher"):
 			names |= set(frappe.get_all(dt, filters={"ifas_voucher": ["is", "set"]}, pluck="name"))
 	return names
@@ -105,7 +105,7 @@ def reset_test_transactions(dry_run=1, keep_opening=1):
 				frappe.db.rollback()
 	print(f"orphan batches deleted: {orphans}")
 	left = sum(frappe.db.count(dt, {"docstatus": 1}) for dt in TRANSACTION_DOCTYPES if frappe.db.exists("DocType", dt))
-	left -= sum(len(old_books & set(frappe.get_all(dt, filters={"docstatus": 1}, pluck="name"))) for dt in ("Journal Entry", "Sales Invoice"))
+	left -= sum(len(old_books & set(frappe.get_all(dt, filters={"docstatus": 1}, pluck="name"))) for dt in ("Journal Entry", "Sales Invoice", "Purchase Invoice", "Payment Entry"))
 	stock = frappe.db.sql("select count(*) from `tabBin` where actual_qty != 0")[0][0]
 	print(f"Submitted transactions remaining: {left}   |   item-warehouse rows with stock: {stock}")
 
@@ -194,7 +194,7 @@ def clean_for_go_live(dry_run=1):
 	frappe.db.commit()
 	frappe.clear_cache()
 	left = sum(frappe.db.count(dt, {"docstatus": ["!=", 2]}) for dt in TRANSACTION_DOCTYPES if frappe.db.exists("DocType", dt))
-	left -= sum(len(_old_books() & set(frappe.get_all(dt, filters={"docstatus": ["!=", 2]}, pluck="name"))) for dt in ("Journal Entry", "Sales Invoice"))
+	left -= sum(len(_old_books() & set(frappe.get_all(dt, filters={"docstatus": ["!=", 2]}, pluck="name"))) for dt in ("Journal Entry", "Sales Invoice", "Purchase Invoice", "Payment Entry"))
 	stock = frappe.db.sql("select count(*) from `tabBin` where actual_qty != 0")[0][0]
 	print("-" * 78)
 	print(f"RESULT: transactions left {left} | item-warehouse rows with stock {stock} | "
