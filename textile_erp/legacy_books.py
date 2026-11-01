@@ -531,6 +531,8 @@ def _post_doc(ctx, mapping, d):
 	acc_field = "income_account" if sales else "expense_account"
 	for line in d["lines"]:
 		code = ctx.item_codes[line["item"]]
+		if not sales:
+			code = _non_stock(ctx, code)
 		info = [f"iFAS: {line['item']}"]
 		if line.get("bill_rate") and abs(line["bill_rate"] - line["rate"]) >= 0.005:
 			info.append(f"bill rate {line['bill_rate']:g}, net of discount {line['rate']:g}")
@@ -557,6 +559,10 @@ def _post_doc(ctx, mapping, d):
 	doc.flags.legacy_import = True
 	doc.set_missing_values()
 	doc.calculate_taxes_and_totals()
+	for r, line in zip(doc.get("items"), d["lines"], strict=True):
+		if r.get(acc_field) != mapping[line["account"]][0]:
+			raise frappe.ValidationError(f"ERPNext put {r.item_code} on {r.get(acc_field)}, iFAS has it on "
+				f"{mapping[line['account']][0]} - nothing posted")
 	for key, want in d["pl_amount"].items():
 		account = mapping[key][0]
 		got = sum(flt(r.amount, 2) for r in doc.get("items") if r.get(acc_field) == account)
@@ -592,6 +598,32 @@ def _post_pe(ctx, mapping, d, bank_accounts):
 	if bank in bank_accounts:
 		frappe.db.set_value(PE, pe.name, "clearance_date", d["date"], update_modified=False)
 	return pe.name
+
+
+def _non_stock(ctx, code):
+	"""Old purchase bills post to the iFAS purchase ledger. With perpetual inventory ERPNext books a STOCK item on a
+	Purchase Invoice to 'Stock Received But Not Billed' instead, so an item that is a stock item in this ERPNext
+	(made by hand or by the textile setup) gets a non-stock twin for the old bills: same name, code '<code> (iFAS)'."""
+	twins = ctx.setdefault("non_stock", {})
+	if code in twins:
+		return twins[code]
+	twin = code
+	if frappe.db.get_value("Item", code, "is_stock_item"):
+		twin = f"{code[:132]} (iFAS)"
+		if not frappe.db.exists("Item", twin):
+			src = frappe.db.get_value("Item", code, ["item_name", "stock_uom", "gst_hsn_code"]
+				if frappe.get_meta("Item").has_field("gst_hsn_code") else ["item_name", "stock_uom"], as_dict=True)
+			doc = frappe.new_doc("Item")
+			doc.update({"item_code": twin, "item_name": src.item_name, "item_group": _tree_leaf("Item Group", "parent_item_group", ITEM_GROUP, True), "stock_uom": src.stock_uom,
+				"is_stock_item": 0, "include_item_in_manufacturing": 0, "is_sales_item": 0, "is_purchase_item": 1,
+				"description": f"{code} as on the old iFAS purchase bills (non-stock: no stock history is imported)"})
+			if src.get("gst_hsn_code"):
+				doc.gst_hsn_code = src.gst_hsn_code
+			doc.flags.ignore_permissions = True
+			doc.insert()
+		ctx.item_uom[twin] = frappe.db.get_value("Item", twin, "stock_uom")
+	twins[code] = twin
+	return twin
 
 
 def _ensure_items(ctx, books, apply):
@@ -743,8 +775,17 @@ def import_books(dry_run=1, file_url=None, company=None):
 		print("DRY RUN - nothing changed. Run with --args '[0]' to import.")
 		return
 
-	with _JobsInlineWhenQueueFull():
-		_apply(ctx, mapping, z, todo, obsolete, reopen)
+	price = frappe.db.get_single_value("Stock Settings", "auto_insert_price_list_rate_if_missing")
+	if price:     # old bill rates must not become today's Price List rates
+		frappe.db.set_single_value("Stock Settings", "auto_insert_price_list_rate_if_missing", 0)
+		frappe.db.commit()
+	try:
+		with _JobsInlineWhenQueueFull():
+			_apply(ctx, mapping, z, todo, obsolete, reopen)
+	finally:
+		if price:
+			frappe.db.set_single_value("Stock Settings", "auto_insert_price_list_rate_if_missing", price)
+			frappe.db.commit()
 
 
 def _apply(ctx, mapping, z, todo, obsolete, reopen=None):
