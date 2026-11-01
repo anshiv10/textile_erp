@@ -59,6 +59,16 @@ def _exists(doctype):
 	return frappe.db.exists("DocType", doctype)
 
 
+STANDARD = {"name", "parent", "parenttype", "idx", "docstatus"}
+
+
+def _cols(alias, doctype, fields):
+	"""select list that only names columns this ERPNext version has (a missing one comes back as NULL),
+	e.g. Subcontracting Receipt Item has stock_uom but no uom."""
+	meta = frappe.get_meta(doctype)
+	return ", ".join(f"{alias}.`{f}`" if f in STANDARD or meta.has_field(f) else f"NULL as `{f}`" for f in fields)
+
+
 def old_issues(f):
 	if not _exists("Old Jobwork Issue"):
 		return []
@@ -131,20 +141,19 @@ def live_rows(f):
 
 
 def stock_entry_rows(f, jw):
-	has_jwr = frappe.get_meta("Stock Entry").has_field("job_work_receipt")
 	data = frappe.db.sql(f"""
-		select se.name, se.posting_date, se.purpose, se.supplier, se.supplier_name, {'se.job_work_receipt' if has_jwr else "''"} as jwr,
-			d.idx, d.item_code, d.item_name, d.qty, d.uom, d.s_warehouse, d.t_warehouse, d.batch_no
+		select {_cols("se", "Stock Entry", ["name", "posting_date", "purpose", "supplier", "supplier_name", "job_work_receipt"])},
+			{_cols("d", "Stock Entry Detail", ["idx", "item_code", "item_name", "qty", "uom", "stock_uom", "s_warehouse", "t_warehouse", "batch_no"])}
 		from `tabStock Entry` se
 		join `tabStock Entry Detail` d on d.parent = se.name and d.parenttype = 'Stock Entry'
 		where se.docstatus = 1 and se.posting_date between %(from_date)s and %(to_date)s
 			and se.purpose in %(purposes)s""", {**f, "purposes": TRANSFER_PURPOSES}, as_dict=True)
 	out = []
 	for d in data:
-		if d.jwr:
+		if d.job_work_receipt:
 			continue      # made by a Job Work Receipt: shown with the receipt
 		common = dict(source=LIVE, doctype="Stock Entry", document=d.name, challan_no=d.name, item=d.item_name or d.item_code,
-			qty=flt(d.qty), uom=d.uom, lot_no=d.batch_no or "", idx=int(d.idx or 0), date=d.posting_date)
+			qty=flt(d.qty), uom=d.uom or d.stock_uom, lot_no=d.batch_no or "", idx=int(d.idx or 0), date=d.posting_date)
 		to_jw, from_jw = jw.get(d.t_warehouse), jw.get(d.s_warehouse)
 		if d.t_warehouse and d.t_warehouse != d.s_warehouse and (to_jw or d.purpose == "Send to Subcontractor"):
 			party = to_jw.name if to_jw else d.supplier
@@ -162,7 +171,8 @@ def purchase_rows(f, jw):
 	out = []
 	for dt, child, extra in (("Purchase Receipt", "Purchase Receipt Item", ""), ("Purchase Invoice", "Purchase Invoice Item", "and p.update_stock = 1")):
 		data = frappe.db.sql(f"""
-			select p.name, p.posting_date, p.supplier_name, p.is_return, i.idx, i.item_code, i.item_name, i.qty, i.uom, i.warehouse
+			select {_cols("p", dt, ["name", "posting_date", "supplier_name", "is_return"])},
+				{_cols("i", child, ["idx", "item_code", "item_name", "qty", "uom", "stock_uom", "warehouse"])}
 			from `tab{dt}` p
 			join `tab{child}` i on i.parent = p.name and i.parenttype = %(dt)s
 			where p.docstatus = 1 and p.posting_date between %(from_date)s and %(to_date)s and i.warehouse in %(whs)s {extra}""",
@@ -170,7 +180,7 @@ def purchase_rows(f, jw):
 		for d in data:
 			s = jw[d.warehouse]
 			out.append(row(date=d.posting_date, jobwork_type="Issue", source=LIVE, doctype=dt, document=d.name, challan_no=d.name,
-				party=s.name, party_name=s.supplier_name, item=d.item_name or d.item_code, qty=flt(d.qty), uom=d.uom, idx=int(d.idx or 0),
+				party=s.name, party_name=s.supplier_name, item=d.item_name or d.item_code, qty=flt(d.qty), uom=d.uom or d.stock_uom, idx=int(d.idx or 0),
 				note=_("{0} from {1} delivered to the job worker").format(_(dt), d.supplier_name)
 				+ (" " + _("(return)") if d.is_return else "")))
 	return out
@@ -214,18 +224,18 @@ def job_work_receipt_rows(f):
 def subcontracting_receipt_rows(f):
 	if not _exists("Subcontracting Receipt"):
 		return []
-	data = frappe.db.sql("""
-		select r.name, r.posting_date, r.supplier, r.supplier_name, r.supplier_delivery_note, i.idx, i.item_code, i.item_name,
-			i.qty, i.uom, i.rejected_qty
+	head = _cols("r", "Subcontracting Receipt", ["name", "posting_date", "supplier", "supplier_name", "supplier_delivery_note"])
+	data = frappe.db.sql(f"""
+		select {head}, {_cols("i", "Subcontracting Receipt Item", ["idx", "item_code", "item_name", "qty", "uom", "stock_uom", "rejected_qty"])}
 		from `tabSubcontracting Receipt` r
 		join `tabSubcontracting Receipt Item` i on i.parent = r.name and i.parenttype = 'Subcontracting Receipt'
 		where r.docstatus = 1 and r.posting_date between %(from_date)s and %(to_date)s""", f, as_dict=True)
 	out = [row(date=d.posting_date, jobwork_type="Receipt", source=LIVE, doctype="Subcontracting Receipt", document=d.name,
 		challan_no=d.supplier_delivery_note or d.name, party=d.supplier, party_name=d.supplier_name, item=d.item_name or d.item_code,
-		qty=flt(d.qty), uom=d.uom, shortage=flt(d.rejected_qty), idx=int(d.idx or 0), note=_("Subcontracting Receipt")) for d in data]
-	used = frappe.db.sql("""
-		select r.name, r.posting_date, r.supplier, r.supplier_name, r.supplier_delivery_note, s.idx, s.rm_item_code, s.consumed_qty,
-			s.stock_uom
+		qty=flt(d.qty), uom=d.uom or d.stock_uom, shortage=flt(d.rejected_qty), idx=int(d.idx or 0), note=_("Subcontracting Receipt"))
+		for d in data]
+	used = frappe.db.sql(f"""
+		select {head}, {_cols("s", "Subcontracting Receipt Supplied Item", ["idx", "rm_item_code", "consumed_qty", "stock_uom"])}
 		from `tabSubcontracting Receipt` r
 		join `tabSubcontracting Receipt Supplied Item` s on s.parent = r.name and s.parenttype = 'Subcontracting Receipt'
 		where r.docstatus = 1 and r.posting_date between %(from_date)s and %(to_date)s""", f, as_dict=True)
