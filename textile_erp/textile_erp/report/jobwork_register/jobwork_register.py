@@ -48,7 +48,7 @@ def keep(r, f):
 
 def row(**k):
 	base = {"date": None, "jobwork_type": "", "source": "", "doctype": "", "document": "", "challan_no": "", "party": None,
-		"party_name": "", "item": "", "pcs": 0, "qty": 0, "uom": "", "issued_item_used": "", "issued_qty_used": 0,
+		"party_name": "", "item": "", "shade": "", "pcs": 0, "qty": 0, "uom": "", "issued_item_used": "", "issued_qty_used": 0,
 		"shortage": 0, "returned": 0, "against": "", "lot_no": "", "bill": "", "note": "", "idx": 0}
 	base.update(k)
 	return base
@@ -101,10 +101,10 @@ def old_issues(f):
 def old_receipts(f):
 	if not _exists("Old Jobwork Receipt"):
 		return []
-	data = frappe.db.sql("""
+	data = frappe.db.sql(f"""
 		select c.name, c.challan_no, c.challan_date, c.party, c.party_name, c.total_pcs, c.total_qty, c.uom as c_uom,
 			c.job_bill, c.challan_book, c.note, i.idx, i.item_name, i.qty, i.uom, i.issue, i.issue_challan, i.issue_item,
-			i.grey_used, i.shortage_qty
+			i.grey_used, i.shortage_qty, {_cols("i", "Old Jobwork Receipt Item", ["shade", "lot_no", "rolls"])}
 		from `tabOld Jobwork Receipt` c
 		left join `tabOld Jobwork Receipt Item` i on i.parent = c.name and i.parenttype = 'Old Jobwork Receipt'
 		where c.challan_date between %(from_date)s and %(to_date)s
@@ -115,7 +115,9 @@ def old_receipts(f):
 		out.append(row(date=d.challan_date, jobwork_type="Receipt", source=OLD, doctype="Old Jobwork Receipt", document=d.name,
 			challan_no=d.challan_no, party=d.party, party_name=d.party_name,
 			item=d.item_name if itemised else _("(no item detail in iFAS)"),
-			pcs=flt(d.total_pcs) if (not itemised or int(d.idx or 0) == 1) else 0, qty=flt(d.qty) if itemised else flt(d.total_qty),
+			shade=d.shade or "", lot_no=d.lot_no or "",
+			pcs=flt(d.rolls) if (itemised and d.rolls) else flt(d.total_pcs) if (not itemised or int(d.idx or 0) == 1) else 0,
+			qty=flt(d.qty) if itemised else flt(d.total_qty),
 			uom=(d.uom if itemised else d.c_uom) or "", issued_item_used=d.issue_item or "", issued_qty_used=flt(d.grey_used),
 			shortage=flt(d.shortage_qty), against=d.issue or d.issue_challan or "", bill=d.job_bill,
 			note=d.challan_book if itemised else (d.note or d.challan_book), idx=int(d.idx or 0)))
@@ -256,6 +258,7 @@ def detail_columns():
 		{"fieldname": "challan_no", "label": _("Challan / Bill No."), "fieldtype": "Data", "width": 110},
 		{"fieldname": "party_name", "label": _("Job Worker"), "fieldtype": "Data", "width": 200},
 		{"fieldname": "item", "label": _("Item"), "fieldtype": "Data", "width": 210},
+		{"fieldname": "shade", "label": _("Shade"), "fieldtype": "Data", "width": 100},
 		{"fieldname": "pcs", "label": _("Pcs / Rolls"), "fieldtype": "Float", "width": 80},
 		{"fieldname": "qty", "label": _("Qty"), "fieldtype": "Float", "width": 100},
 		{"fieldname": "uom", "label": _("Unit"), "fieldtype": "Data", "width": 60},

@@ -31,7 +31,8 @@
   "column_break_z",
   "note",
   "source_file",
-  "ifas_key"
+  "ifas_key",
+  "content_hash"
  ],
  "fields": [
   {
@@ -201,10 +202,17 @@
    "unique": 1,
    "hidden": 1,
    "read_only": 1
+  },
+  {
+   "fieldname": "content_hash",
+   "fieldtype": "Data",
+   "label": "Content Hash",
+   "hidden": 1,
+   "read_only": 1
   }
  ],
  "in_create": 1,
- "modified": "2026-11-01 22:15:00.000000",
+ "modified": "2026-11-05 22:00:00.000000",
  "modified_by": "Administrator",
  "module": "Textile ERP",
  "name": "Old Jobwork Issue",

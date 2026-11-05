@@ -774,6 +774,7 @@ def import_books(dry_run=1, file_url=None, company=None):
 		n, _ = _attach(z, False)
 		print(f"6. Original files to store under Home / {FOLDER}: {n}")
 		_job_work(ctx, mapping, False)
+		_settle(ctx, False)
 		print("DRY RUN - nothing changed. Run with --args '[0]' to import.")
 		return
 
@@ -841,6 +842,10 @@ def _apply(ctx, mapping, z, todo, obsolete, reopen=None):
 	print(f"6. Original files stored under Home / {FOLDER}: {done} new, {skipped} already there")
 	frappe.db.commit()
 	jw_errors = _job_work(ctx, mapping, True)
+	if errors:
+		print("8. Bill-wise settlement: skipped - fix the errors above and run again")
+	else:
+		jw_errors += _settle(ctx, True)
 	print("-" * 78)
 	print(f"RESULT: {len(todo) - len(errors)} entries posted, {len(errors) + len(jw_errors)} errors. Next: reconcile_books")
 
@@ -850,13 +855,20 @@ JW_DT = {"Issue": JWI, "Receipt": JWR}
 JW_OLD = ("Old Job Work Challan", "Old Job Work Challan Item")     # first version: one list for both, replaced
 
 
-def _jw_have():
-	"""ifas_key -> doctype of the jobwork issues / receipts already in ERPNext."""
+def _jw_have(with_hash=False):
+	"""ifas_key -> doctype (or (doctype, name, content_hash)) of the jobwork issues / receipts already in ERPNext."""
 	have = {}
 	for dt in JW_DT.values():
 		if frappe.db.exists("DocType", dt):
-			have.update({k: dt for k in frappe.get_all(dt, filters={"ifas_key": ["is", "set"]}, pluck="ifas_key")})
+			hashed = with_hash and frappe.get_meta(dt).has_field("content_hash")
+			for r in frappe.get_all(dt, filters={"ifas_key": ["is", "set"]},
+				fields=["name", "ifas_key", "content_hash" if hashed else "name as content_hash"]):
+				have[r.ifas_key] = (dt, r.name, r.content_hash if hashed else None) if with_hash else dt
 	return have
+
+
+def _jw_hash(c):
+	return hashlib.md5(json.dumps(c, sort_keys=True, default=str).encode(), usedforsecurity=False).hexdigest()
 
 
 def _jw_drop_old(apply):
@@ -887,16 +899,24 @@ def _job_work(ctx, mapping, apply):
 		print(f"7. Jobwork issue / receipt: {', '.join(missing)} missing - run 'bench migrate' first")
 		return [("job work", "doctype missing")] if apply else []
 	old = _jw_drop_old(apply)
-	have = _jw_have()
-	todo = [c for c in sorted(ctx.job_work, key=lambda c: c["kind"] != "Issue") if c["id"] not in have]   # issues first
+	current = _jw_have(with_hash=True)
+	have = {k: v[0] for k, v in current.items()}
+	# new challans, and challans whose content changed (e.g. Raj Dyers' own invoice detail): the old copy is replaced
+	changed = {c["id"]: current[c["id"]] for c in ctx.job_work if c["id"] in current and current[c["id"]][2] != _jw_hash(c)}
+	todo = [c for c in sorted(ctx.job_work, key=lambda c: c["kind"] != "Issue") if c["id"] not in have or c["id"] in changed]
+	for k in changed:
+		have.pop(k)   # issues first
 
 	def counts(rows, kind):
 		return sum(1 for c in rows if c["kind"] == kind)
 
 	def report(made):
 		for kind in ("Issue", "Receipt"):
-			print(f"{'7.' if kind == 'Issue' else '  '} Jobwork {kind}s (history only): {made(kind)} new, "
+			print(f"{'7.' if kind == 'Issue' else '  '} Jobwork {kind}s (history only): {made(kind)} new or updated, "
 				f"{sum(1 for dt in have.values() if dt == JW_DT[kind])} already there   -> list '{JW_DT[kind]}'")
+		if changed:
+			print(f"   ({len(changed)} of them already there and {'now' if apply else 'to be'} refreshed with the latest detail,"
+				" e.g. lots / shades / weights from Raj Dyers' own invoices)")
 		if old:
 			print(f"   the earlier combined list 'Old Job Work Challan' ({old}) "
 				+ ("is removed - the same challans are in the two lists above" if apply else "will be removed - replaced by the two lists"))
@@ -904,13 +924,17 @@ def _job_work(ctx, mapping, apply):
 	if not apply:
 		report(lambda kind: counts(todo, kind))
 		return []
-	items, errors, issue_names = {}, [], set(frappe.get_all(JWI, pluck="name"))
+	items, errors = {}, []
 
 	def item(name):
 		if name not in items:
 			items[name] = next((c for c in (name, f"{name[:132]} (iFAS)") if name and frappe.db.exists("Item", c)), None)
 		return items[name]
 
+	for _k, (dt, name, _h) in sorted(changed.items(), key=lambda x: x[1][0] != JWR):    # receipts first: they link issues
+		frappe.delete_doc(dt, name, force=1, ignore_permissions=True)
+	frappe.db.commit()
+	issue_names = set(frappe.get_all(JWI, pluck="name"))
 	for c in todo:
 		try:
 			dt = JW_DT[c["kind"]]
@@ -920,6 +944,8 @@ def _job_work(ctx, mapping, apply):
 				"fiscal_year": PERIOD_NAMES.get(c["fy"], c["fy"]).replace("FY ", ""), "party_type": party_type, "party": party,
 				"party_name": c["party_name"], "total_pcs": c["pcs"], "total_qty": c["qty"], "uom": c["uom"], "amount": c["amount"],
 				"remarks": (c["remarks"] or "")[:1000], "note": c["note"], "source_file": c["source"], "ifas_key": c["id"]})
+			if doc.meta.has_field("content_hash"):
+				doc.content_hash = _jw_hash(c)
 			if dt == JWI:
 				doc.update({"lot_no": c["lot"], "purchase_bill_no": c["bill"], "weaver": c["weaver"]})
 				for ln in c["lines"]:
@@ -933,7 +959,8 @@ def _job_work(ctx, mapping, apply):
 						"uom": ln["uom"], "issue": ln.get("issue") if ln.get("issue") in issue_names else None,
 						"issue_challan": ln.get("issue_challan", ""), "issue_item": ln.get("issue_item", ""),
 						"grey_used": ln.get("grey_used", 0), "shortage_qty": ln.get("shortage", 0),
-						"shortage_pct": ln.get("shortage_pct", 0)})
+						"shortage_pct": ln.get("shortage_pct", 0), "shade": ln.get("shade", ""), "lot_no": ln.get("lot", ""),
+						"rolls": ln.get("pcs", 0), "rate": ln.get("rate", 0), "amount": ln.get("line_amount", 0)})
 			doc.flags.ignore_permissions = True
 			doc.insert(set_name=c["name"], ignore_mandatory=True)
 			if dt == JWI:
@@ -945,6 +972,48 @@ def _job_work(ctx, mapping, apply):
 			print(f"  ERROR jobwork {c['kind'].lower()} {c['name']}: {str(ex)[:200]}")
 	failed = {e[0] for e in errors}
 	report(lambda kind: sum(1 for c in todo if c["kind"] == kind and c["id"] not in failed))
+	return errors
+
+
+def _settle(ctx, apply):
+	"""Bill-wise settlement, as ERPNext's Payment Reconciliation tool does it by hand: for every customer and
+	supplier, receipts / payments / journal entries / credit notes not yet adjusted are set against that party's
+	open bills, oldest bill first. Only the bill-wise links change (Payment Ledger); every ledger balance stays
+	as it is. Without this, Accounts Receivable shows all old bills as open plus a large unadjusted advance."""
+	totals, errors = {}, []
+	for party_type, account in (("Customer", ctx.default_receivable_account), ("Supplier", ctx.default_payable_account)):
+		t = totals[party_type] = frappe._dict(parties=0, bills=0, open=0.0, credit=0.0, matched=0.0)
+		parties = frappe.get_all("Payment Ledger Entry", filters={"company": ctx.name, "party_type": party_type,
+			"account": account, "delinked": 0}, distinct=True, pluck="party")
+		for party in sorted(p for p in parties if p):
+			try:
+				pr = frappe.new_doc("Payment Reconciliation")
+				pr.update({"company": ctx.name, "party_type": party_type, "party": party,
+					"receivable_payable_account": account, "invoice_limit": 0, "payment_limit": 0})
+				pr.get_unreconciled_entries()
+				if not pr.get("invoices") or not pr.get("payments"):
+					continue
+				t.parties += 1
+				t.bills += len(pr.invoices)
+				t.open += sum(flt(i.outstanding_amount) for i in pr.invoices)
+				t.credit += sum(flt(p.amount) for p in pr.payments)
+				pr.allocate_entries(frappe._dict({"invoices": [i.as_dict() for i in pr.invoices],
+					"payments": [p.as_dict() for p in pr.payments]}))
+				matched = sum(flt(a.allocated_amount) for a in pr.get("allocation") or [])
+				t.matched += matched
+				if apply and matched:
+					pr.reconcile()
+					frappe.db.commit()
+			except Exception as ex:
+				frappe.db.rollback()
+				errors.append((party, str(ex)[:200]))
+				print(f"  ERROR settling {party_type} {party}: {str(ex)[:200]}")
+			frappe.local.message_log = []
+	c, s = totals["Customer"], totals["Supplier"]
+	verb = "set against" if apply else "to set against"
+	print(f"8. Bill-wise settlement (oldest bill first): customers {c.parties}, Rs {c.matched:,.2f} of receipts {verb} "
+		f"their bills | suppliers {s.parties}, Rs {s.matched:,.2f} of payments {verb} their bills"
+		+ ("" if c.parties or s.parties else " - nothing left to settle"))
 	return errors
 
 
@@ -1084,6 +1153,16 @@ def reconcile_books(file_url=None, company=None):
 		print(f"Profit {PERIOD_NAMES[fy]}: ERPNext {profit(fy):,.2f} | {src} {want_p:,.2f} | {'MATCH' if ok else 'DIFFERENT'}")
 	print(f"Profit FY 2024-25 before closing stock 31-03-2025 (CA to give it): {profit('2425'):,.2f}")
 	print(f"{TEMP_OPENING} balance after import: {temp:,.2f} {'(correct, must be 0)' if not temp else '(must be 0!)'}")
+	try:      # bill-wise picture as Accounts Receivable / Payable show it (information only)
+		from textile_erp.reporting import outstanding_rows
+		for kind, label in (("Receivable", "Customers"), ("Payable", "Suppliers")):
+			rows = outstanding_rows(kind, ctx.name)
+			bills = sum(r.outstanding for r in rows if r.outstanding > 0)
+			adv = sum(r.outstanding for r in rows if r.outstanding < 0)
+			print(f"{label}: open bills Rs {bills:,.2f} | payments not yet set against a bill Rs {-adv:,.2f} | "
+				f"net Rs {bills + adv:,.2f}")
+	except Exception as ex:
+		print(f"(open-bill summary not shown: {str(ex)[:80]})")
 	jw_missing = 0
 	if books.get("job_work"):
 		have = _jw_have()
