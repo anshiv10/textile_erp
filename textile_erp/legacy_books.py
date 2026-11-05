@@ -705,19 +705,32 @@ def _attach(z, apply):
 class _JobsInlineWhenQueueFull:
 	"""Deleting a document queues a small clean-up job (delete_dynamic_links). Where no background worker is
 	running (a laptop bench without 'bench start'), hundreds of them fill the queue and Frappe refuses the next
-	one ('Too many queued background jobs'). Then the job simply runs here, right away."""
+	one ('Too many queued background jobs'), or the queue (Redis) is not running at all. Then the job simply
+	runs here, right away - and once Redis is found down, every later job too, without waiting for it again."""
 
 	def __enter__(self):
 		import frappe.utils.background_jobs as bj
-		self.bj, self.orig, self.inline = bj, bj.enqueue, 0
+		self.bj, self.orig, self.inline, self.down = bj, bj.enqueue, 0, False
+
+		def inline(method, args, kwargs):
+			self.inline += 1
+			kwargs.pop("enqueue_after_commit", None)
+			return self.orig(method, *args, **dict(kwargs, now=True))
 
 		def enqueue(method, *args, **kwargs):
+			if kwargs.get("now"):
+				return self.orig(method, *args, **kwargs)
+			if self.down:
+				return inline(method, args, kwargs)
 			try:
 				return self.orig(method, *args, **kwargs)
 			except frappe.QueueOverloaded:
-				self.inline += 1
-				kwargs.pop("enqueue_after_commit", None)
-				return self.orig(method, *args, **dict(kwargs, now=True))
+				return inline(method, args, kwargs)
+			except Exception as ex:
+				if "redis" not in type(ex).__module__.lower() and "Redis" not in str(ex):
+					raise
+				self.down = True       # Redis queue not running ('bench start' not started)
+				return inline(method, args, kwargs)
 
 		frappe.enqueue = bj.enqueue = enqueue
 		return self
@@ -725,7 +738,8 @@ class _JobsInlineWhenQueueFull:
 	def __exit__(self, *exc):
 		frappe.enqueue = self.bj.enqueue = self.orig
 		if self.inline:
-			print(f"   ({self.inline} background clean-up jobs ran directly: the job queue was full)")
+			print(f"   ({self.inline} background clean-up jobs ran directly: "
+				+ ("the job queue (Redis) is not running" if self.down else "the job queue was full") + ")")
 		return False
 
 
