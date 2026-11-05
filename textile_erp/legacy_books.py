@@ -1001,23 +1001,30 @@ def _settle(ctx, apply):
 			"account": account, "delinked": 0}, distinct=True, pluck="party")
 		for party in sorted(p for p in parties if p):
 			try:
-				pr = frappe.new_doc("Payment Reconciliation")
-				pr.update({"company": ctx.name, "party_type": party_type, "party": party,
-					"receivable_payable_account": account, "invoice_limit": 0, "payment_limit": 0})
-				pr.get_unreconciled_entries()
-				if not pr.get("invoices") or not pr.get("payments"):
-					continue
-				t.parties += 1
-				t.bills += len(pr.invoices)
-				t.open += sum(flt(i.outstanding_amount) for i in pr.invoices)
-				t.credit += sum(flt(p.amount) for p in pr.payments)
-				pr.allocate_entries(frappe._dict({"invoices": [i.as_dict() for i in pr.invoices],
-					"payments": [p.as_dict() for p in pr.payments]}))
-				matched = sum(flt(a.allocated_amount) for a in pr.get("allocation") or [])
-				t.matched += matched
-				if apply and matched:
-					pr.reconcile()
-					frappe.db.commit()
+				counted = False
+				for _pass in range(10 if apply else 1):   # a journal entry with several rows for the party, or a
+					# payment split over many bills, can need more than one round; stop when nothing is left
+					pr = frappe.new_doc("Payment Reconciliation")
+					pr.update({"company": ctx.name, "party_type": party_type, "party": party,
+						"receivable_payable_account": account, "invoice_limit": 0, "payment_limit": 0})
+					pr.get_unreconciled_entries()
+					if not pr.get("invoices") or not pr.get("payments"):
+						break
+					bills, credit = len(pr.invoices), sum(flt(p.amount) for p in pr.payments)
+					pr.allocate_entries(frappe._dict({"invoices": [i.as_dict() for i in pr.invoices],
+						"payments": [p.as_dict() for p in pr.payments]}))
+					matched = sum(flt(a.allocated_amount) for a in pr.get("allocation") or [])
+					if matched < 0.01:
+						break
+					if not counted:
+						counted = True
+						t.parties += 1
+						t.bills += bills
+						t.credit += credit
+					t.matched += matched
+					if apply:
+						pr.reconcile()
+						frappe.db.commit()
 			except Exception as ex:
 				frappe.db.rollback()
 				errors.append((party, str(ex)[:200]))
@@ -1027,7 +1034,7 @@ def _settle(ctx, apply):
 	verb = "set against" if apply else "to set against"
 	print(f"8. Bill-wise settlement (oldest bill first): customers {c.parties}, Rs {c.matched:,.2f} of receipts {verb} "
 		f"their bills | suppliers {s.parties}, Rs {s.matched:,.2f} of payments {verb} their bills"
-		+ ("" if c.parties or s.parties else " - nothing left to settle"))
+		+ ("" if c.matched or s.matched else " - nothing left to settle"))
 	return errors
 
 
